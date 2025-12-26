@@ -306,7 +306,6 @@ install_slssteam() {
         echo "Config backup created."
     fi
 
-    # Download latest SLSsteam release
     echo "Downloading SLSsteam..."
     # Get release data from GitHub API
     RELEASE_JSON=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
@@ -357,23 +356,26 @@ install_slssteam() {
 
     # Copy library
     cp "$SLSSTEAM_SO" "$SLSSTEAM_INSTALL_DIR/"
-    rm -rf /tmp/slssteam_extract "$TEMP_SLS"
 
-    # Configure SLSsteam (only if missing PlayNotOwnedGames)
+    # Configure SLSsteam
+    # If user has config, ensure PlayNotOwnedGames is enabled
+    # If no config, copy default from archive and enable PlayNotOwnedGames
     if [ ! -f "$SLSSTEAM_CONFIG_DIR/config.yaml" ]; then
-        cat > "$SLSSTEAM_CONFIG_DIR/config.yaml" << 'EOF'
-# SLSsteam Configuration
-PlayNotOwnedGames: yes
-EOF
-        echo "config.yaml created."
-    else
-        if ! grep -q "PlayNotOwnedGames" "$SLSSTEAM_CONFIG_DIR/config.yaml"; then
-            echo "PlayNotOwnedGames: yes" >> "$SLSSTEAM_CONFIG_DIR/config.yaml"
-            echo "config.yaml updated."
-        else
-            echo "config.yaml already contains PlayNotOwnedGames."
+        if [ -f "/tmp/slssteam_extract/res/config.yaml" ]; then
+            cp /tmp/slssteam_extract/res/config.yaml "$SLSSTEAM_CONFIG_DIR/config.yaml"
         fi
     fi
+
+    # Ensure PlayNotOwnedGames is enabled (add if missing, or update if exists)
+    if grep -q "^PlayNotOwnedGames:" "$SLSSTEAM_CONFIG_DIR/config.yaml" 2>/dev/null; then
+        sed -i 's/^PlayNotOwnedGames:.*/PlayNotOwnedGames: yes/' "$SLSSTEAM_CONFIG_DIR/config.yaml"
+        echo "PlayNotOwnedGames enabled in config."
+    else
+        echo "PlayNotOwnedGames: yes" >> "$SLSSTEAM_CONFIG_DIR/config.yaml"
+        echo "PlayNotOwnedGames added to config."
+    fi
+
+    rm -rf /tmp/slssteam_extract "$TEMP_SLS"
 
     # Patch steam.sh
     STEAM_SH="$STEAM_DIR/steam.sh"
