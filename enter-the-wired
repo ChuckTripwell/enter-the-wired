@@ -80,20 +80,20 @@ case "$FAMILY" in
         echo "Detected system: Fedora family"
         PKG_MANAGER="dnf"
         INSTALL_CMD="sudo dnf install -y"
-        PACKAGE_LIST="python3 python3-pip python3-devel SDL2-devel gcc SDL2_mixer-devel SDL2_image-devel SDL2_ttf-devel git"
+        PACKAGE_LIST="python3 python3-pip python3-devel SDL2-devel gcc SDL2_mixer-devel SDL2_image-devel SDL2_ttf-devel git libnotify-devel"
         ;;
     debian)
         echo "Detected system: Debian/Ubuntu family"
         PKG_MANAGER="apt"
         INSTALL_CMD="sudo apt install -y"
         NEEDS_UPDATE=true
-        PACKAGE_LIST="python3 python3-pip python3-dev python3.12-venv libsdl2-dev build-essential libsdl2-mixer-dev libsdl2-image-dev libsdl2-ttf-dev libxcb-cursor0 libcurl4-openssl-dev git"
+        PACKAGE_LIST="python3 python3-pip python3-dev python3.12-venv libsdl2-dev build-essential libsdl2-mixer-dev libsdl2-image-dev libsdl2-ttf-dev libxcb-cursor0 libcurl4-openssl-dev git libnotify-bin"
         ;;
     arch)
         echo "Detected system: Arch Linux family"
         PKG_MANAGER="pacman"
         INSTALL_CMD="sudo pacman -Sy --noconfirm"
-        PACKAGE_LIST="python python-pip sdl2 gcc sdl2_image sdl2_ttf libxcb curl git"
+        PACKAGE_LIST="python python-pip sdl2 gcc sdl2_image sdl2_ttf libxcb curl git libnotify"
         ;;
     *)
         echo -e "${RED}Distribution '$NAME' not automatically supported.${NC}"
@@ -104,6 +104,7 @@ case "$FAMILY" in
         echo "  - SDL2 Mixer (libsdl2-mixer-dev)"
         echo "  - SDL2 Image (libsdl2-image-dev)"
         echo "  - SDL2 TTF (libsdl2-ttf-dev)"
+        echo "  - libnotify (biblioteca de notificações do desktop)"
         echo "  - GCC/G++"
         exit 1
         ;;
