@@ -354,19 +354,14 @@ install_slssteam() {
 
     echo "Found SLSsteam.so at: $SLSSTEAM_SO"
 
-    # Copy library
-    cp "$SLSSTEAM_SO" "$SLSSTEAM_INSTALL_DIR/"
-
-    # Configure SLSsteam
-    # If user has config, ensure PlayNotOwnedGames is enabled
-    # If no config, copy default from archive and enable PlayNotOwnedGames
+    # Configure SLSsteam: ensure PlayNotOwnedGames is enabled (before cleanup)
+    mkdir -p "$SLSSTEAM_CONFIG_DIR"
     if [ ! -f "$SLSSTEAM_CONFIG_DIR/config.yaml" ]; then
         if [ -f "/tmp/slssteam_extract/res/config.yaml" ]; then
             cp /tmp/slssteam_extract/res/config.yaml "$SLSSTEAM_CONFIG_DIR/config.yaml"
         fi
     fi
 
-    # Ensure PlayNotOwnedGames is enabled (add if missing, or update if exists)
     if grep -q "^PlayNotOwnedGames:" "$SLSSTEAM_CONFIG_DIR/config.yaml" 2>/dev/null; then
         sed -i 's/^PlayNotOwnedGames:.*/PlayNotOwnedGames: yes/' "$SLSSTEAM_CONFIG_DIR/config.yaml"
         echo "PlayNotOwnedGames enabled in config."
@@ -375,38 +370,17 @@ install_slssteam() {
         echo "PlayNotOwnedGames added to config."
     fi
 
-    rm -rf /tmp/slssteam_extract "$TEMP_SLS"
-
-    # Create steam.cfg to block Steam updates
-    STEAM_CFG="$STEAM_DIR/steam.cfg"
-    if [ ! -f "$STEAM_CFG" ]; then
-        cat << 'EOF' > "$STEAM_CFG"
-BootStrapperInhibitAll=enable
-BootStrapperForceSelfUpdate=disable
-EOF
-        echo "Steam updates blocked via steam.cfg"
-    fi
-
-    # Patch steam.sh
-    STEAM_SH="$STEAM_DIR/steam.sh"
-    if [ -f "$STEAM_SH" ]; then
-        echo "Patching steam.sh..."
-
-        # Check if already patched (avoid duplicates) - more robust check
-        if grep -q -F "LD_AUDIT.*SLSsteam" "$STEAM_SH" 2>/dev/null; then
-            echo "steam.sh already patched with SLSsteam. Skipping..."
-        else
-            # Backup before patching
-            cp "$STEAM_SH" "$STEAM_SH.bak"
-            echo "Backup created at: $STEAM_SH.bak"
-
-            # Simple patch: add export after line 10
-            sed -i "10a export LD_AUDIT=\"$SLSSTEAM_INSTALL_DIR/SLSsteam.so\"" "$STEAM_SH"
-            echo "Patch applied."
-        fi
+    # Run SLSsteam setup.sh install (handles wrappers, desktop files, etc.)
+    cd /tmp/slssteam_extract
+    if [ -f "setup.sh" ]; then
+        ./setup.sh install
     else
-        echo -e "${YELLOW}Warning: steam.sh not found at $STEAM_SH${NC}"
+        echo "setup.sh not found, falling back to manual install..."
+        # Fallback: manual install
+        cp "$SLSSTEAM_SO" "$SLSSTEAM_INSTALL_DIR/"
     fi
+
+    rm -rf /tmp/slssteam_extract "$TEMP_SLS"
 
     # Create libcurl symlink (required for SLSsteam)
     STEAM_LIB_DIR="$STEAM_DIR/ubuntu12_32"
