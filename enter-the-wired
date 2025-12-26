@@ -267,24 +267,22 @@ install_slssteam() {
         return 1
     fi
 
-    # Close Steam if running
+    # Check if Steam is running and warn user
     STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
     if [ -n "$STEAM_PID" ]; then
-        echo "Closing Steam..."
-        for pid in $STEAM_PID; do
-            kill -TERM "$pid" 2>/dev/null || true
-        done
-        for i in 1 2 3 4 5; do
-            sleep 1
+        echo -e "${YELLOW}Steam is running. Please close Steam manually.${NC}"
+        if [ -t 0 ]; then
+            echo "Press Enter after closing Steam..."
+            read -r
             STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
-            [ -z "$STEAM_PID" ] && break
-        done
-        STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
-        if [ -n "$STEAM_PID" ]; then
-            echo "Force closing Steam..."
-            for pid in $STEAM_PID; do
-                kill -9 "$pid" 2>/dev/null || true
+            while [ -n "$STEAM_PID" ]; do
+                echo "Steam is still running. Please close it."
+                sleep 2
+                STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
             done
+        else
+            echo "Restart Steam after installation completes."
+            sleep 3
         fi
     fi
 
