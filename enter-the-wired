@@ -216,6 +216,7 @@ if [ ! -d ".venv" ]; then
     exit 1
 fi
 
+chmod +x ./.venv/bin/activate
 source ./.venv/bin/activate
 
 # CC=gcc CXX=g++ override pygame's requirement for "gcc-12"
