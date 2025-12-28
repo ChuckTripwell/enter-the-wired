@@ -38,13 +38,18 @@ chmod +x enter-the-wired
 
 ## Uninstall
 
-To remove ACCELA:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/refs/heads/main/uninstall | sh
+```
+
+## Manual Uninstallation
+1. Remove ACCELA:
 
 ```bash
 rm -rf ~/.local/share/ACCELA
 ```
 
-To remove SLSsteam:
+2. Remove SLSsteam:
 
 ```bash
 rm -rf ~/.local/share/SLSsteam ~/.config/SLSsteam
