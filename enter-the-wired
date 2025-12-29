@@ -463,14 +463,17 @@ configure_slssteam_injector() {
         return 1
     fi
 
-    # Build LD_AUDIT string
-    local ld_audit=""
+    # Build LD_AUDIT strings (systemd uses portable paths, bash uses absolute)
+    local ld_audit_systemd=""
+    local ld_audit_bash=""
     while IFS= read -r so_file; do
         local portable_path="${so_file/$HOME/%h}"
-        if [[ -z "$ld_audit" ]]; then
-            ld_audit="$portable_path"
+        if [[ -z "$ld_audit_systemd" ]]; then
+            ld_audit_systemd="$portable_path"
+            ld_audit_bash="$so_file"
         else
-            ld_audit="$ld_audit:$portable_path"
+            ld_audit_systemd="$ld_audit_systemd:$portable_path"
+            ld_audit_bash="$ld_audit_bash:$so_file"
         fi
         echo "  Found: $so_file"
     done <<< "$so_files"
@@ -483,14 +486,25 @@ configure_slssteam_injector() {
         echo "  Backup created: $backup_file"
     fi
 
-    # Create drop-in
-    mkdir -p "$dropin_dir"
-    cat > "$dropin_file" <<EOF
+    # Create new drop-in content
+    local tmp_dropin
+    tmp_dropin=$(mktemp)
+    cat > "$tmp_dropin" <<EOF
 [Service]
-Environment="LD_AUDIT=${ld_audit}"
+Environment="LD_AUDIT=${ld_audit_systemd}"
 EOF
-    chmod 644 "$dropin_file"
-    echo "  Drop-in created: $dropin_file"
+    chmod 644 "$tmp_dropin"
+
+    # Check if content changed (avoid unnecessary reload)
+    if [[ -f "$dropin_file" ]] && cmp -s "$tmp_dropin" "$dropin_file"; then
+        echo "  Gaming Mode config unchanged. Skipping."
+        rm -f "$tmp_dropin"
+    else
+        mkdir -p "$dropin_dir"
+        mv "$tmp_dropin" "$dropin_file"
+        echo "  Drop-in created: $dropin_file"
+        systemctl --user daemon-reload
+    fi
 
     # Enable SafeMode in config
     local config_file="$HOME/.config/SLSsteam/config.yaml"
@@ -499,8 +513,43 @@ EOF
         echo "  SafeMode enabled"
     fi
 
-    # Reload systemd
-    systemctl --user daemon-reload
+    # Desktop Mode for Bazzite (wrapper + shortcuts)
+    if [[ "$os_flavor" == "bazzite" ]]; then
+        echo "  Bazzite detected: Installing Desktop Mode support..."
+
+        local bin_wrapper="$HOME/.local/bin/steam"
+        local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
+        local system_shortcut="/usr/share/applications/steam.desktop"
+        local autostart_file="$HOME/.config/autostart/steam.desktop"
+
+        # Create wrapper
+        mkdir -p "$HOME/.local/bin"
+        cat > "$bin_wrapper" <<EOF
+#!/bin/bash
+# SLSsteam Wrapper for Desktop Mode
+export LD_AUDIT="${ld_audit_bash}"
+exec /usr/bin/steam "\$@"
+EOF
+        chmod +x "$bin_wrapper"
+        echo "  Created wrapper: $bin_wrapper"
+
+        # Patch desktop shortcut
+        mkdir -p "$HOME/.local/share/applications"
+        if [[ -f "$system_shortcut" ]]; then
+            cp "$system_shortcut" "$desktop_shortcut"
+            sed -i "s|^Exec=/usr/bin/steam|Exec=$bin_wrapper|" "$desktop_shortcut"
+            sed -i "s|^Exec=steam|Exec=$bin_wrapper|" "$desktop_shortcut"
+            echo "  Patched desktop shortcut: $desktop_shortcut"
+        fi
+
+        # Patch autostart
+        if [[ -f "$autostart_file" ]]; then
+            sed -i "s|^Exec=/usr/bin/steam|Exec=$bin_wrapper|" "$autostart_file"
+            sed -i "s|^Exec=steam|Exec=$bin_wrapper|" "$autostart_file"
+            echo "  Patched autostart: $autostart_file"
+        fi
+    fi
+
     echo "Injector configured successfully."
 }
 

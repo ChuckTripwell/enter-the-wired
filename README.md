@@ -8,7 +8,7 @@ ACCELA is an open-source game client built with Python/.NET that provides variou
 
 ## What is SLSsteam?
 
-SLSsteam is a Steam plugin that enables playing games not owned in your Steam library. When enabled, it patches Steam.sh to unlock additional functionality.
+SLSsteam is a Steam plugin that enables playing games not owned in your Steam library. It uses LD_AUDIT injection to patch Steam at runtime without modifying Steam files.
 
 ## Quick Install
 
@@ -22,6 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
   - Fedora/RHEL/CentOS (dnf)
   - Debian/Ubuntu (apt)
   - Arch Linux (pacman)
+  - Bazzite / SteamOS support
 
 - **Automatic Dependency Installation**
   - Python 3.x + pip
@@ -38,10 +39,12 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
   - Installs all Python dependencies
   - Configures pygame compatibility
 
-- **Optional SLSsteam Integration**
+- **SLSsteam Integration (LD_AUDIT Injection)**
   - Installs latest release from GitHub
-  - Automatic Steam.sh patching with backup
-  - Enables `PlayNotOwnedGames` by default
+  - **Gaming Mode**: Uses systemd drop-in (`LD_AUDIT` environment variable)
+  - **Desktop Mode** (Bazzite): Creates wrapper script and patches desktop shortcuts
+  - Automatic backup with timestamp
+  - SafeMode enabled by default
   - Configuration via `~/.config/SLSsteam/config.yaml`
 
 ## Requirements
@@ -57,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
 ACCELA:        ~/.local/share/ACCELA/
 SLSsteam:      ~/.local/share/SLSsteam/
 SLSsteam cfg:  ~/.config/SLSsteam/
-Steam backup:  ~/.steam/steam/steam.sh.bak
+Systemd drop:  ~/.config/systemd/user/gamescope-session*.d/slssteam.conf
 ```
 
 ## Manual Installation
@@ -74,19 +77,12 @@ chmod +x enter-the-wired
 curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/uninstall | sh
 ```
 
-## Manual Uninstallation
-
-1. Remove ACCELA:
-```bash
-rm -rf ~/.local/share/ACCELA
-```
-
-2. Remove SLSsteam:
-```bash
-rm -rf ~/.local/share/SLSsteam ~/.config/SLSsteam
-# Restore steam.sh backup if needed
-cp ~/.steam/steam/steam.sh.bak ~/.steam/steam/steam.sh
-```
+The uninstall script will:
+- Remove LD_AUDIT systemd drop-in
+- Clean up Desktop Mode wrapper and shortcuts
+- Remove ACCELA directory
+- Remove SLSsteam directories
+- Restore any backups
 
 ## Troubleshooting
 
@@ -103,12 +99,21 @@ source ~/.local/share/ACCELA/.venv/bin/activate
 python -c "import accela"
 ```
 
+### SLSsteam not working on SteamOS/Bazzite
+- Ensure you rebooted after installation (systemd needs reload)
+- Check the injector status in systemd:
+```bash
+systemctl --user status gamescope-session.service
+```
+
 ## How it Works
 
 1. **Distribution Detection**: Reads `/etc/os-release` to identify the package manager
 2. **Dependency Installation**: Installs all required system packages
 3. **ACCELA Setup**: Downloads and extracts ACCELA, then sets up the Python venv
-4. **SLSsteam (Optional)**: Fetches latest release from GitHub, patches Steam.sh
+4. **SLSsteam**: Fetches latest release from GitHub, configures LD_AUDIT injection
+   - **Gaming Mode**: Creates systemd drop-in for `gamescope-session.service`
+   - **Desktop Mode**: Creates wrapper script and patches desktop entries (Bazzite only)
 
 ## Credits
 
