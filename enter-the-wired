@@ -456,6 +456,22 @@ install_slssteam() {
     echo "Just open Steam normally to play."
 }
 
+# Function to detect Steam Deck (SteamOS)
+is_steam_deck() {
+    if [[ ! -f /etc/os-release ]]; then
+        return 1
+    fi
+
+    source /etc/os-release
+
+    # SteamOS has ID=steamos and VARIANT_ID=steamdeck
+    if [[ "$ID" == "steamos" ]] || [[ "${VARIANT_ID:-}" == "steamdeck" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 configure_slssteam_injection() {
     local sls_dir="$HOME/.local/share/SLSsteam"
     local steam_script="/usr/bin/steam"
@@ -512,17 +528,26 @@ configure_slssteam_injection() {
 
     # Note: Desktop shortcuts are already patched by SLSsteam's setup.sh install
 
-    # Enable SafeMode and PlayNotOwnedGames in config
+    # Enable PlayNotOwnedGames in config
     local config_file="$HOME/.config/SLSsteam/config.yaml"
     if [[ -f "$config_file" ]]; then
-        if grep -q "^SafeMode:" "$config_file"; then
-            sed -i 's/^SafeMode:.*/SafeMode: yes/' "$config_file"
-            echo "  SafeMode enabled"
-        fi
         if grep -q "^PlayNotOwnedGames:" "$config_file"; then
             sed -i 's/^PlayNotOwnedGames:.*/PlayNotOwnedGames: yes/' "$config_file"
             echo "  PlayNotOwnedGames enabled"
         fi
+    fi
+
+    # Enable SafeMode ONLY on Steam Deck
+    if is_steam_deck; then
+        echo "  Steam Deck detected - enabling SafeMode"
+        if grep -q "^SafeMode:" "$config_file" 2>/dev/null; then
+            sed -i 's/^SafeMode:.*/SafeMode: yes/' "$config_file"
+        else
+            echo "SafeMode: yes" >> "$config_file"
+        fi
+        echo "  SafeMode enabled"
+    else
+        echo "  Non-Steam Deck system - SafeMode not enabled"
     fi
 
     echo "SLSsteam injection configured successfully."
