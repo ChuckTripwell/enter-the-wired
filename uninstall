@@ -27,11 +27,13 @@ uninstall_slssteam_injection() {
     if [[ -f "$steam_backup" ]]; then
         sudo cp "$steam_backup" "$steam_script"
         echo "  Restored original: $steam_script"
+        # Remove backup after restore
+        sudo rm -f "$steam_backup"
     else
         echo "  No backup found at $steam_backup"
-        # Try to remove LD_AUDIT lines manually
-        if grep -q "LD_AUDIT.*SLSsteam" "$steam_script" 2>/dev/null; then
-            sudo sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_script"
+        # Try to remove LD_AUDIT lines manually (any path)
+        if grep -q "LD_AUDIT" "$steam_script" 2>/dev/null; then
+            sudo sed -i '/^export LD_AUDIT/d' "$steam_script"
             echo "  Removed LD_AUDIT lines from $steam_script"
         fi
     fi
@@ -42,11 +44,17 @@ uninstall_slssteam_injection() {
         echo "  Removed desktop shortcut override."
     fi
 
-    # Restore autostart to use /usr/bin/steam
+    # Restore autostart to use system steam
     if [[ -f "$autostart_file" ]]; then
-        sed -i 's|/usr/local/bin/steam|/usr/bin/steam|g' "$autostart_file"
-        sed -i 's|Exec=steam|Exec=/usr/bin/steam|' "$autostart_file"
+        # Replace any Exec line pointing to steam with system path
+        sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=/usr/bin/steam|g' "$autostart_file"
         echo "  Restored autostart entry."
+    fi
+
+    # Also clean up any SLSsteam wrapper if it exists
+    if [[ -f "/usr/local/bin/steam" ]]; then
+        sudo rm -f "/usr/local/bin/steam"
+        echo "  Removed SLSsteam wrapper from /usr/local/bin/steam"
     fi
 }
 

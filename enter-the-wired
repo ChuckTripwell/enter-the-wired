@@ -180,14 +180,11 @@ if [ "$SKIP_DEPS" = true ]; then
     echo "Skipping system dependency installation (Atomic system detected)."
 else
     echo "Starting installation..."
-    $INSTALL_CMD $PACKAGE_LIST
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Success! All dependencies installed.${NC}"
-    else
+    if ! $INSTALL_CMD $PACKAGE_LIST; then
         echo -e "${RED}Installation failed.${NC}"
         exit 1
     fi
+    echo -e "${GREEN}Success! All dependencies installed.${NC}"
 fi
 
 # Install .NET SDK 9.0
@@ -275,7 +272,6 @@ if [ ! -d ".venv" ]; then
     exit 1
 fi
 
-chmod +x ./.venv/bin/activate
 source ./.venv/bin/activate
 
 # CC=gcc CXX=g++ override pygame's requirement for "gcc-12"
@@ -512,30 +508,9 @@ configure_slssteam_injection() {
 
     # Find the last exec line and add LD_AUDIT before it
     # This modifies the original /usr/bin/steam
-    sudo sed -i "/^exec.*steam.*\"\$@\"/i export LD_AUDIT=\"$ld_audit\"" "$steam_script"
+    sudo sed -i '/^exec.*steam.*"\$\@"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_script"
 
-    # Also patch desktop shortcuts to use /usr/bin/steam directly
-    local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
-    local system_shortcut="/usr/share/applications/steam.desktop"
-    local autostart_file="$HOME/.config/autostart/steam.desktop"
-
-    mkdir -p "$HOME/.local/share/applications"
-    mkdir -p "$HOME/.config/autostart"
-
-    # Patch user desktop shortcut
-    if [[ -f "$system_shortcut" ]]; then
-        cp "$system_shortcut" "$desktop_shortcut"
-        sed -i 's|^Exec=steam|Exec=/usr/bin/steam|' "$desktop_shortcut"
-        sed -i 's|^Exec=/usr/local/bin/steam|Exec=/usr/bin/steam|' "$desktop_shortcut"
-        echo "  Patched desktop shortcut: $desktop_shortcut"
-    fi
-
-    # Patch autostart
-    if [[ -f "$autostart_file" ]]; then
-        sed -i 's|/usr/local/bin/steam|/usr/bin/steam|g' "$autostart_file"
-        sed -i 's|Exec=steam|Exec=/usr/bin/steam|' "$autostart_file"
-        echo "  Patched autostart: $autostart_file"
-    fi
+    # Note: Desktop shortcuts are already patched by SLSsteam's setup.sh install
 
     # Enable SafeMode and PlayNotOwnedGames in config
     local config_file="$HOME/.config/SLSsteam/config.yaml"
