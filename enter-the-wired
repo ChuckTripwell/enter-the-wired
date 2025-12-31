@@ -348,6 +348,17 @@ install_slssteam() {
         return 1
     fi
 
+    # Create steam.cfg with recommended settings
+    STEAM_CONFIG_DIR="$STEAM_DIR/config"
+    mkdir -p "$STEAM_CONFIG_DIR"
+
+    cat > "$STEAM_CONFIG_DIR/steam.cfg" << 'EOF'
+BootStrapperInhibitAll=enable
+BootStrapperForceSelfUpdate=disable
+EOF
+
+    echo "Steam config created at $STEAM_CONFIG_DIR/steam.cfg"
+
     # Check if Steam is running and warn user
     STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
     if [ -n "$STEAM_PID" ]; then

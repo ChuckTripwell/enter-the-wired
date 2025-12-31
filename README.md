@@ -53,6 +53,10 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
   - PlayNotOwnedGames enabled by default
   - Configuration via `~/.config/SLSsteam/config.yaml`
 
+- **Steam Configuration**
+  - Automatically creates `~/.steam/steam/config/steam.cfg`
+  - Disables Steam bootstrapper self-update (prevents Steam from overriding configuration)
+
 ## Requirements
 
 - Linux with a supported distribution
@@ -66,6 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
 ACCELA:        ~/.local/share/ACCELA/
 SLSsteam:      ~/.local/share/SLSsteam/
 SLSsteam cfg:  ~/.config/SLSsteam/
+Steam cfg:     ~/.steam/steam/config/steam.cfg
 Steam backup:  /usr/bin/steam.bak
 ```
 
@@ -76,6 +81,19 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
 chmod +x enter-the-wired
 ./enter-the-wired
 ```
+
+## Steam Update Helper
+
+When Steam updates, it may override the `steam.cfg` configuration. Use the update helper to restore the configuration:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/update-steam | bash
+```
+
+This script will:
+1. Remove the existing `steam.cfg`
+2. Instruct you to update Steam
+3. Guide you to reinstall by running the main installer again
 
 ## Uninstall
 

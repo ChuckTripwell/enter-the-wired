@@ -1,0 +1,98 @@
+### Enter the Wired - Instalador Universal ACCELA & SLSsteam
+
+Este script facilita a instalação do **ACCELA** e **SLSsteam** (para jogar jogos que não estão na sua biblioteca).
+Ele detecta sua distribuição Linux e tenta instalar as dependências automaticamente.
+
+**Principais Funcionalidades:**
+- Instalação automática de dependências (Fedora, Debian/Ubuntu, Arch, Bazzite/SteamOS)
+- Detecção e instalação automática de terminal (Konsole se não tiver nenhum)
+- Modifica `/usr/bin/steam` diretamente com injeção LD_AUDIT
+- Cria backup em `/usr/bin/steam.bak` antes de modificar
+- Cria `steam.cfg` para evitar que a Steam sobrescreva a configuração
+- Funciona em Gaming Mode e Desktop Mode em todas as distribuições
+- SafeMode habilitado por padrão (Steam Deck)
+- PlayNotOwnedGames habilitado por padrão
+
+### Instalação Rápida (Recomendado)
+
+Abra seu terminal e rode o seguinte comando:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash
+```
+### Instalação Manual
+Se preferir revisar o script antes de rodar:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired -o enter-the-wired
+```
+```
+chmod +x enter-the-wired
+```
+```
+./enter-the-wired
+```
+### Atualização da Steam
+Se a Steam atualizar e sobrescrever o `steam.cfg`, use o helper:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/update-steam | bash
+```
+### Desinstalação
+Abra seu terminal e rode o seguinte comando:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/refs/heads/main/uninstall | bash
+```
+
+**Créditos:**
+- Ideia original: @nukhes
+- [SLSsteam](https://github.com/AceSLS/SLSsteam) por **AceSLS**
+- Integração LD_AUDIT: JD Ros (YouTube)
+- Repositório: [GitHub - enter-the-wired](https://github.com/ciscosweater/enter-the-wired)
+
+--------------------------------------------------------------------------------------------------
+
+### Enter the Wired - Universal ACCELA & SLSsteam Installer
+
+This script makes it easier to install **ACCELA** and **SLSsteam** (to play games that are not in your library).
+It detects your Linux distribution and attempts to install dependencies automatically.
+
+**Main Features:**
+- Automatic dependency installation (Fedora, Debian/Ubuntu, Arch, Bazzite/SteamOS)
+- Automatic terminal detection and installation (Konsole if none found)
+- Modifies `/usr/bin/steam` directly with LD_AUDIT injection
+- Creates backup at `/usr/bin/steam.bak` before modifying
+- Creates `steam.cfg` to prevent Steam from overriding the configuration
+- Works in Gaming Mode and Desktop Mode on all distributions
+- SafeMode enabled by default (Steam Deck)
+- PlayNotOwnedGames enabled by default
+
+### Quick Installation (Recommended)
+Open your terminal and run the following command:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash
+```
+### Manual Installation
+If you prefer to review the script before running it:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired -o enter-the-wired
+```
+```
+chmod +x enter-the-wired
+```
+```
+./enter-the-wired
+```
+### Steam Update Helper
+If Steam updates and overwrites `steam.cfg`, use the helper:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/update-steam | bash
+```
+### Uninstallation
+Open your terminal and run the following command:
+```
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/refs/heads/main/uninstall | bash
+```
+
+**Credits:**
+- Original idea: @nukhes
+- [SLSsteam](https://github.com/AceSLS/SLSsteam) by **AceSLS**
+- LD_AUDIT Integration: JD Ros (YouTube)
+- Repository: [GitHub - enter-the-wired](https://github.com/ciscosweater/enter-the-wired)
