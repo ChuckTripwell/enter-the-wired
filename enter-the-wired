@@ -255,7 +255,7 @@ finalize_steam() {
     done
 
     # Give Steam time to update
-    sleep 20
+    sleep 30
 
     # Force close Steam
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
@@ -425,16 +425,17 @@ if [ "$SKIP_DEPS" = true ]; then
     echo "Skipping system dependency installation (Atomic system detected)."
 else
     echo "Starting installation..."
-    if ! $INSTALL_CMD $PACKAGE_LIST; then
-        echo -e "${RED}Installation failed.${NC}"
-        exit 1
+    if ! $INSTALL_CMD $PACKAGE_LIST 2>&1; then
+        echo -e "${YELLOW}Warning: Some system dependencies could not be installed.${NC}"
+        echo "Continuing anyway..."
+    else
+        echo -e "${GREEN}Success! All dependencies installed.${NC}"
     fi
-    echo -e "${GREEN}Success! All dependencies installed.${NC}"
 fi
 
 # Install .NET SDK 9.0
 echo -e "${GREEN}Installing .NET SDK 9.0...${NC}"
-if ! curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 9.0 --runtime dotnet; then
+if ! curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 9.0 --runtime dotnet 2>&1; then
     echo -e "${YELLOW}Warning: .NET SDK installation failed. Continuing anyway...${NC}"
 fi
 
@@ -513,25 +514,24 @@ fi
 ACCELA_DIR="$HOME/.local/share/ACCELA"
 
 if [ ! -d "$ACCELA_DIR" ]; then
-    echo -e "${RED}Error: ACCELA directory not found at $ACCELA_DIR${NC}"
-    echo "ACCELAINSTALL may have failed."
-    exit 1
-fi
+    echo -e "${YELLOW}Warning: ACCELA directory not found at $ACCELA_DIR${NC}"
+    echo "Skipping Python dependencies installation."
+else
+    cd "$ACCELA_DIR"
 
-cd "$ACCELA_DIR"
+    if [ ! -d ".venv" ]; then
+        echo -e "${YELLOW}Warning: Virtualenv not found.${NC}"
+        echo "Skipping Python dependencies installation."
+    else
+        source ./.venv/bin/activate
 
-if [ ! -d ".venv" ]; then
-    echo -e "${RED}Error: Virtualenv not found.${NC}"
-    exit 1
-fi
-
-source ./.venv/bin/activate
-
-# CC=gcc CXX=g++ override pygame's requirement for "gcc-12"
-echo "Installing Python dependencies..."
-if ! CC=gcc CXX=g++ pip install --no-cache-dir --force-reinstall -r "$ACCELA_DIR/requirements.txt"; then
-    echo -e "${RED}Error installing Python dependencies.${NC}"
-    exit 1
+        # CC=gcc CXX=g++ override pygame's requirement for "gcc-12"
+        echo "Installing Python dependencies..."
+        if ! CC=gcc CXX=g++ pip install --no-cache-dir --force-reinstall -r "$ACCELA_DIR/requirements.txt" 2>&1; then
+            echo -e "${YELLOW}Warning: Some Python dependencies could not be installed.${NC}"
+            echo "Continuing anyway..."
+        fi
+    fi
 fi
 
 echo -e "${GREEN}Dependencies installed successfully!${NC}"
