@@ -24,6 +24,11 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
   - Arch Linux (pacman)
   - Bazzite / SteamOS support
 
+- **Steam Installation Support**
+  - Native Steam installation (`~/.steam/steam`)
+  - Flatpak Steam installation (`~/.var/app/com.valvesoftware.Steam/.steam/steam`)
+  - Automatic detection
+
 - **Automatic Dependency Installation**
   - Python 3.x + pip
   - SDL2 libraries (devel, mixer, image, ttf)
@@ -47,31 +52,34 @@ curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/e
 - **SLSsteam Integration (LD_AUDIT Injection)**
   - Installs latest release from GitHub
   - Modifies `/usr/bin/steam` to add LD_AUDIT environment variable
+  - Patches `steam.sh` in Steam installation directory
   - Creates backup before modification
   - Works in both **Gaming Mode** and **Desktop Mode** on all distributions
-  - SafeMode enabled by default
+  - SafeMode enabled by default (Steam Deck)
   - PlayNotOwnedGames enabled by default
   - Configuration via `~/.config/SLSsteam/config.yaml`
 
 - **Steam Configuration**
-  - Automatically creates `~/.steam/steam/config/steam.cfg`
-  - Disables Steam bootstrapper self-update (prevents Steam from overriding configuration)
+  - Automatically creates `steam.cfg` to block Steam updates
+  - Opens Steam temporarily to allow updates if needed
+  - Recreates `steam.cfg` after Steam updates
 
 ## Requirements
 
 - Linux with a supported distribution
 - curl or wget
 - sudo access
-- For SLSsteam: Steam installed at `$HOME/.steam/steam`
+- For SLSsteam: Steam installed (native or Flatpak)
 
 ## Installation Locations
 
 ```
-ACCELA:        ~/.local/share/ACCELA/
-SLSsteam:      ~/.local/share/SLSsteam/
-SLSsteam cfg:  ~/.config/SLSsteam/
-Steam cfg:     ~/.steam/steam/config/steam.cfg
-Steam backup:  /usr/bin/steam.bak
+ACCELA:              ~/.local/share/ACCELA/
+SLSsteam (native):   ~/.local/share/SLSsteam/
+SLSsteam (Flatpak):  ~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/
+SLSsteam cfg:        ~/.config/SLSsteam/ (or Flatpak equivalent)
+Steam cfg:           ~/.steam/steam/steam.cfg (or Flatpak equivalent)
+Steam backup:        /usr/bin/steam.bak
 ```
 
 ## Manual Installation
@@ -82,18 +90,15 @@ chmod +x enter-the-wired
 ./enter-the-wired
 ```
 
-## Steam Update Helper
+## Automatic Steam Update Handling
 
-When Steam updates, it may override the `steam.cfg` configuration. Use the update helper to restore the configuration:
+When Steam or SLSsteam updates, the installer handles it automatically:
+1. Removes `steam.cfg` to allow Steam to update
+2. Opens Steam with SLSsteam injection (Steam updates if needed)
+3. Closes Steam and recreates `steam.cfg`
+4. Patches `/usr/bin/steam` and `steam.sh`
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/update-steam | bash
-```
-
-This script will:
-1. Remove the existing `steam.cfg`
-2. Instruct you to update Steam
-3. Guide you to reinstall by running the main installer again
+No separate update script needed!
 
 ## Uninstall
 
@@ -105,29 +110,29 @@ The uninstall script will:
 - Restore `/usr/bin/steam` from backup
 - Remove desktop shortcut override
 - Remove ACCELA directory
-- Remove SLSsteam directories
+- Remove SLSsteam directories (native and Flatpak)
 
 ## How it Works
 
 1. **Distribution Detection**: Reads `/etc/os-release` to identify the package manager
-2. **Terminal Check**: Scans for installed terminals, installs Konsole if none found
-3. **Dependency Installation**: Installs all required system packages
-4. **ACCELA Setup**: Downloads and extracts ACCELA, then sets up the Python venv
-5. **SLSsteam**:
+2. **Steam Detection**: Checks for native or Flatpak Steam installation
+3. **Terminal Check**: Scans for installed terminals, installs Konsole if none found
+4. **Dependency Installation**: Installs all required system packages
+5. **ACCELA Setup**: Downloads and extracts ACCELA, then sets up the Python venv
+6. **SLSsteam**:
    - Fetches latest release from GitHub
    - Creates backup of `/usr/bin/steam`
-   - Modifies `/usr/bin/steam` to add LD_AUDIT environment variable
+   - Opens Steam temporarily to allow updates
+   - Modifies `/usr/bin/steam` and `steam.sh` to add LD_AUDIT environment variable
    - Works in Gaming Mode and Desktop Mode on all distributions
 
 ## Compatibility Matrix
 
-| Distribution | Gaming Mode | Desktop Mode |
-|--------------|-------------|--------------|
-| SteamOS (Steam Deck) | `/usr/bin/steam` | `/usr/bin/steam` |
-| Bazzite | `/usr/bin/steam` | `/usr/bin/steam` |
-| Ubuntu/Debian/Fedora/Arch | `/usr/bin/steam` | `/usr/bin/steam` |
-
-**Note:** The installer modifies `/usr/bin/steam` directly on all distributions. A backup is created at `/usr/bin/steam.bak` before modification.
+| Distribution | Native Steam | Flatpak Steam |
+|--------------|--------------|---------------|
+| SteamOS (Steam Deck) | Supported | N/A |
+| Bazzite | Supported | N/A |
+| Ubuntu/Debian/Fedora/Arch | Supported | Supported |
 
 ## Troubleshooting
 
