@@ -429,17 +429,19 @@ if [ "$NEEDS_UPDATE" = true ]; then
     sudo apt update
 fi
 
-# Single installation command (skip for rpm-ostree systems)
+# Install packages one by one, skipping failures (for rpm-ostree systems, skip entirely)
 if [ "$SKIP_DEPS" = true ]; then
     echo "Skipping system dependency installation (Atomic system detected)."
 else
-    echo "Starting installation..."
-    if ! $INSTALL_CMD $PACKAGE_LIST 2>&1; then
-        echo -e "${YELLOW}Warning: Some system dependencies could not be installed.${NC}"
-        echo "Continuing anyway..."
-    else
-        echo -e "${GREEN}Success! All dependencies installed.${NC}"
-    fi
+    echo "Installing dependencies..."
+    FAILED_DEPS=""
+    for pkg in $PACKAGE_LIST; do
+        if $INSTALL_CMD "$pkg" 2>/dev/null; then
+            echo "  Installed: $pkg"
+        else
+            echo -e "${YELLOW}  Skipped (not found): $pkg${NC}"
+        fi
+    done
 fi
 
 # Install .NET SDK 9.0
