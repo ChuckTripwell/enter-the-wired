@@ -429,19 +429,22 @@ if [ "$NEEDS_UPDATE" = true ]; then
     sudo apt update
 fi
 
-# Install packages one by one, skipping failures (for rpm-ostree systems, skip entirely)
+# Install packages in bulk (faster than one-by-one)
 if [ "$SKIP_DEPS" = true ]; then
     echo "Skipping system dependency installation (Atomic system detected)."
 else
     echo "Installing dependencies..."
-    FAILED_DEPS=""
-    for pkg in $PACKAGE_LIST; do
-        if $INSTALL_CMD "$pkg" 2>/dev/null; then
-            echo "  Installed: $pkg"
-        else
-            echo -e "${YELLOW}  Skipped (not found): $pkg${NC}"
-        fi
-    done
+    case "$FAMILY" in
+        fedora)
+            sudo dnf install -y --setopt=install_weak_deps=False $PACKAGE_LIST 2>/dev/null || true
+            ;;
+        debian)
+            sudo apt-get install -y -m $PACKAGE_LIST 2>/dev/null || true
+            ;;
+        arch)
+            sudo pacman -Sy --noconfirm $PACKAGE_LIST 2>/dev/null || true
+            ;;
+    esac
 fi
 
 # Install .NET SDK 9.0
