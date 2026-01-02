@@ -30,7 +30,7 @@ source /etc/os-release
 export ID ID_LIKE VARIANT_ID
 
 # ACCELA URL
-ACCELA_URL="https://files.catbox.moe/ffb12t.gz"
+ACCELA_URL="https://files.catbox.moe/e1ay4j.gz"
 TEMP_ARCHIVE="accela_source.tar.gz"
 INSTALL_DIR="$HOME/accela"
 
