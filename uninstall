@@ -91,6 +91,24 @@ uninstall_slssteam_injection() {
     local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
     local autostart_file="$HOME/.config/autostart/steam.desktop"
 
+    # Steam Deck: Restore steam-jupiter from backup
+    local steam_jupiter="/usr/bin/steam-jupiter"
+    if [ -f "$steam_jupiter" ]; then
+        echo "  Steam Deck detected - cleaning steam-jupiter..."
+        local jupiter_backup="${steam_jupiter}.bak"
+        if [[ -f "$jupiter_backup" ]]; then
+            sudo cp "$jupiter_backup" "$steam_jupiter"
+            echo "    Restored original: $steam_jupiter"
+            sudo rm -f "$jupiter_backup"
+        else
+            # Try to remove LD_AUDIT lines if present
+            if grep -q "LD_AUDIT" "$steam_jupiter" 2>/dev/null; then
+                sudo sed -i '/^export LD_AUDIT/d' "$steam_jupiter"
+                echo "    Removed LD_AUDIT lines from $steam_jupiter"
+            fi
+        fi
+    fi
+
     # Try to find Steam executable
     if steam_script=$(find_steam_executable 2>/dev/null); then
         steam_backup="${steam_script}.bak"

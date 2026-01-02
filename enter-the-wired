@@ -172,6 +172,61 @@ run_steam_with_sls() {
     fi
 }
 
+# Function to patch steam-jupiter for Steam Deck Gaming Mode
+patch_steam_jupiter() {
+    local steam_jupiter="/usr/bin/steam-jupiter"
+    local sls_dir
+    sls_dir=$(get_sls_install_dir)
+
+    if [ ! -f "$steam_jupiter" ]; then
+        echo "  steam-jupiter not found at $steam_jupiter (not a Steam Deck)"
+        return 1
+    fi
+
+    echo "  Patching steam-jupiter at $steam_jupiter..."
+
+    # Backup original file
+    if [ ! -f "${steam_jupiter}.bak" ]; then
+        sudo cp "$steam_jupiter" "${steam_jupiter}.bak"
+        echo "  Backup created: ${steam_jupiter}.bak"
+    fi
+
+    # Build LD_AUDIT string
+    local ld_audit=""
+    while IFS= read -r so_file; do
+        if [ -n "$so_file" ]; then
+            if [ -z "$ld_audit" ]; then
+                ld_audit="$so_file"
+            else
+                ld_audit="$ld_audit:$so_file"
+            fi
+        fi
+    done < <(find "$sls_dir" -maxdepth 1 -name "*.so" 2>/dev/null | sort)
+
+    if [ -z "$ld_audit" ]; then
+        echo "  Warning: No .so files found in $sls_dir"
+        return 1
+    fi
+
+    # Check if already patched
+    if grep -q "LD_AUDIT.*SLSsteam" "$steam_jupiter" 2>/dev/null; then
+        echo "  steam-jupiter already patched, updating..."
+        sudo sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_jupiter"
+    fi
+
+    # Find the exec line with steam -steamdeck and add LD_AUDIT before it
+    # The pattern matches: exec /usr/lib/steam/steam -steamdeck "$@"
+    if grep -q 'exec /usr/lib/steam/steam -steamdeck' "$steam_jupiter" 2>/dev/null; then
+        sudo sed -i '/^exec \/usr\/lib\/steam\/steam -steamdeck/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter"
+        echo "  Patched steam-jupiter with LD_AUDIT"
+    else
+        # Fallback: add before any exec steam line
+        sudo sed -i '/^exec.*steam.*"-steamdeck"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter" 2>/dev/null || \
+        sudo sed -i '/^exec.*steam/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter" 2>/dev/null || true
+        echo "  Applied fallback patch to steam-jupiter"
+    fi
+}
+
 # Function to patch steam.sh with LD_AUDIT
 patch_steam_sh() {
     local steam_dir
@@ -213,6 +268,7 @@ finalize_steam() {
     local steam_dir
     steam_dir=$(get_steam_dir)
     local steam_cfg="$steam_dir/steam.cfg"
+    local steam_jupiter="/usr/bin/steam-jupiter"
 
     echo "Finalizing Steam configuration..."
 
@@ -222,7 +278,7 @@ finalize_steam() {
         echo "  Removed steam.cfg"
     fi
 
-    # Kill Steam if running (check for both native and flatpak)
+    # Kill Steam if running (check for both native, flatpak, and Steam Deck)
     local steam_pids
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
     if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
@@ -235,45 +291,60 @@ finalize_steam() {
         sleep 2
     fi
 
-    # Run Steam with SLSsteam (allows Steam to update if needed)
-    echo "  Starting Steam (will auto-update if needed)..."
-    run_steam_with_sls &
-    RUN_STEAM_PID=$!
+    # For Steam Deck: Don't run Steam here, just prepare for patching
+    # Gaming Mode uses steam-jupiter which needs to be patched after Steam closes
+    if [ -f "$steam_jupiter" ]; then
+        echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
+        echo "  Starting Steam briefly to check for updates..."
+        # Start Steam briefly then close it
+        if command -v steam &>/dev/null; then
+            steam &
+            RUN_STEAM_PID=$!
+            sleep 10
+            kill $RUN_STEAM_PID 2>/dev/null || true
+            sleep 2
+        fi
+    else
+        # For non-Steam Deck: Run Steam with SLSsteam (allows Steam to update if needed)
+        echo "  Starting Steam (will auto-update if needed)..."
+        run_steam_with_sls &
+        RUN_STEAM_PID=$!
 
-    # Wait for Steam to open
-    sleep 5
+        # Wait for Steam to open
+        sleep 5
 
-    # Wait for Steam to fully start (check both native and flatpak)
-    local attempts=0
-    while [ $attempts -lt 12 ]; do
+        # Wait for Steam to fully start (check both native and flatpak)
+        local attempts=0
+        while [ $attempts -lt 12 ]; do
+            steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
+            if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
+                steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
+            fi
+            if [ -n "$steam_pids" ]; then
+                break
+            fi
+            sleep 1
+            attempts=$((attempts + 1))
+        done
+
+        # Give Steam time to update
+        sleep 30
+
+        # Force close Steam
         steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
         if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
             steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
         fi
+
         if [ -n "$steam_pids" ]; then
-            break
+            echo "  Closing Steam..."
+            echo "$steam_pids" | xargs kill 2>/dev/null || true
+            sleep 2
         fi
-        sleep 1
-        attempts=$((attempts + 1))
-    done
 
-    # Give Steam time to update
-    sleep 30
-
-    # Force close Steam
-    steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-    if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
-        steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
+        # Also kill the background run we started
+        kill $RUN_STEAM_PID 2>/dev/null || true
     fi
-
-    if [ -n "$steam_pids" ]; then
-        echo "  Closing Steam..."
-        echo "$steam_pids" | xargs kill 2>/dev/null || true
-        sleep 2
-    fi
-
-    # Also kill the background run we started
-    kill $RUN_STEAM_PID 2>/dev/null || true
 
     # Create steam.cfg to block future updates
     cat > "$steam_cfg" << 'EOF'
@@ -920,7 +991,17 @@ finalize_steam
 # Then: patch Steam scripts (after Steam closes)
 echo -e "${GREEN}Patching Steam scripts...${NC}"
 configure_slssteam_injection
-patch_steam_sh
+
+# Steam Deck: patch steam-jupiter for Gaming Mode
+if [ -f "/usr/bin/steam-jupiter" ]; then
+    echo -e "${GREEN}Patching steam-jupiter for Steam Deck Gaming Mode...${NC}"
+    patch_steam_jupiter
+fi
+
+# Always patch steam.sh (used in Desktop Mode, even on Steam Deck)
+if [ -f "$HOME/.steam/steam/steam.sh" ] || [ -f "$HOME/.local/share/Steam/steam.sh" ]; then
+    patch_steam_sh
+fi
 
 echo ""
 echo "=============================================="
@@ -935,9 +1016,11 @@ echo ""
 if is_steam_deck; then
     echo -e "${YELLOW}  Steam Deck detected!${NC}"
     echo ""
+    echo "  - SLSsteam patched in steam-jupiter for Gaming Mode"
     echo "  - Use Game Mode to launch ACCELA"
     echo "  - SLSsteam SafeMode is enabled for stability"
-    echo "  - Some desktop features may require Konsole installation"
+    echo "  - WARNING: Steam updates will reset the patch!"
+    echo "  - Re-run this script after Steam updates"
 else
     echo "  Launch ACCELA from your applications menu."
 fi
