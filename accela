@@ -67,6 +67,49 @@ detect_distro_family() {
     return 1
 }
 
+# Helper function to install packages one by one, skipping unavailable ones
+install_packages_one_by_one() {
+    local packages="$1"
+    local family="$2"
+    local count=0
+    local skipped=0
+
+    for pkg in $packages; do
+        count=$((count + 1))
+
+        case "$family" in
+            fedora)
+                if sudo dnf install -y --setopt=install_weak_deps=False "$pkg" 2>/dev/null; then
+                    echo -e "  ${GREEN}✓${NC} $pkg"
+                else
+                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
+                    skipped=$((skipped + 1))
+                fi
+                ;;
+            debian)
+                if sudo apt-get install -y -m "$pkg" 2>/dev/null; then
+                    echo -e "  ${GREEN}✓${NC} $pkg"
+                else
+                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
+                    skipped=$((skipped + 1))
+                fi
+                ;;
+            arch)
+                if sudo pacman -Sy --noconfirm "$pkg" 2>/dev/null; then
+                    echo -e "  ${GREEN}✓${NC} $pkg"
+                else
+                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
+                    skipped=$((skipped + 1))
+                fi
+                ;;
+        esac
+    done
+
+    if [ $skipped -gt 0 ]; then
+        echo -e "  ${YELLOW}Skipped $skipped unavailable packages${NC}"
+    fi
+}
+
 # Install ACCELA
 install_accela() {
     echo -e "${GREEN}Installing ACCELA...${NC}"
@@ -202,22 +245,12 @@ install_accela() {
         sudo apt update
     fi
 
-    # Install packages in bulk
+    # Install packages one by one, skipping unavailable ones
     if [ "${SKIP_DEPS:-false}" = true ]; then
         echo "Skipping system dependency installation."
     else
         echo "Installing dependencies..."
-        case "$FAMILY" in
-            fedora)
-                sudo dnf install -y --setopt=install_weak_deps=False $PACKAGE_LIST 2>/dev/null || true
-                ;;
-            debian)
-                sudo apt-get install -y -m $PACKAGE_LIST 2>/dev/null || true
-                ;;
-            arch)
-                sudo pacman -Sy --noconfirm $PACKAGE_LIST 2>/dev/null || true
-                ;;
-        esac
+        install_packages_one_by_one "$PACKAGE_LIST" "$FAMILY"
     fi
 
     # Install .NET SDK 9.0

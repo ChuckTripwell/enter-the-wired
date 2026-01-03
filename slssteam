@@ -491,6 +491,49 @@ configure_slssteam_injection() {
     echo "SLSsteam injection configured successfully."
 }
 
+# Helper function to install packages one by one, skipping unavailable ones
+install_packages_one_by_one() {
+    local packages="$1"
+    local family="$2"
+    local count=0
+    local skipped=0
+
+    for pkg in $packages; do
+        count=$((count + 1))
+
+        case "$family" in
+            fedora)
+                if sudo dnf install -y "$pkg" 2>/dev/null; then
+                    echo -e "  ${GREEN}✓${NC} $pkg"
+                else
+                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
+                    skipped=$((skipped + 1))
+                fi
+                ;;
+            debian)
+                if sudo apt-get install -y -m "$pkg" 2>/dev/null; then
+                    echo -e "  ${GREEN}✓${NC} $pkg"
+                else
+                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
+                    skipped=$((skipped + 1))
+                fi
+                ;;
+            arch)
+                if sudo pacman -Sy --noconfirm "$pkg" 2>/dev/null; then
+                    echo -e "  ${GREEN}✓${NC} $pkg"
+                else
+                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
+                    skipped=$((skipped + 1))
+                fi
+                ;;
+        esac
+    done
+
+    if [ $skipped -gt 0 ]; then
+        echo -e "  ${YELLOW}Skipped $skipped unavailable packages${NC}"
+    fi
+}
+
 # Main installation function
 install_slssteam() {
     echo -e "${GREEN}Installing SLSsteam...${NC}"
@@ -508,28 +551,20 @@ install_slssteam() {
         FAMILY="debian"
     fi
 
-    # Install SLSsteam dependencies
+    # Install SLSsteam dependencies one by one, skipping unavailable ones
     echo "Installing SLSsteam dependencies..."
     case "$FAMILY" in
         fedora)
-            sudo dnf install -y \
-                git libnotify curl \
-                libcurl-devel openssl-devel libcrypto-devel \
-                7zip p7zip-plugins || true
+            SLS_PACKAGES="git libnotify curl libcurl-devel openssl-devel libcrypto-devel 7zip p7zip-plugins"
             ;;
         debian)
-            sudo apt-get install -y -m \
-                git libnotify-bin curl 7zip-full \
-                libcurl4-openssl-dev libcurl4 libcurl \
-                libssl3 libssl-dev \
-                libcrypto++6 libcrypto++-dev \
-                libxcb-cursor0 || true
+            SLS_PACKAGES="git libnotify-bin curl 7zip-full libcurl4-openssl-dev libcurl4 libcurl4:i386 libcurl libcurl:i386 libssl3 libssl-dev libcrypto++6 libcrypto++-dev libxcb-cursor0"
             ;;
         arch)
-            sudo pacman -Sy --noconfirm \
-                git libnotify curl 7zip || true
+            SLS_PACKAGES="git libnotify curl 7zip"
             ;;
     esac
+    install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
 
     # Enable i386 architecture for Debian/Ubuntu if needed
     if [ "$FAMILY" = "debian" ]; then
