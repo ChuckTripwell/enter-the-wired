@@ -86,7 +86,10 @@ if [ -f /etc/os-release ]; then
     fi
 fi
 
-echo ""
-echo "  To play with SLSsteam, just restart Steam."
-echo ""
-echo "Protocol complete. Welcome to the Wired."
+# Run installation if script is executed directly (not sourced)
+if [ -n "${BASH_SOURCE:-}" ] && [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo ""
+    echo "  To play with SLSsteam, just restart Steam."
+    echo ""
+    echo "Protocol complete. Welcome to the Wired."
+fi

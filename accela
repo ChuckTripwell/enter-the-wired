@@ -325,6 +325,6 @@ install_accela() {
 }
 
 # Run installation if script is executed directly (not sourced)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [ -n "${BASH_SOURCE:-}" ] && [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     install_accela
 fi
