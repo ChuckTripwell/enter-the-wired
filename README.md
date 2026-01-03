@@ -13,7 +13,7 @@ SLSsteam is a Steam plugin that enables playing games not owned in your Steam li
 ## Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | sh
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash
 ```
 
 ## Features
@@ -122,7 +122,7 @@ No separate update script needed!
 ## Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/uninstall | sh
+curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/uninstall | bash
 ```
 
 The uninstall script will:
