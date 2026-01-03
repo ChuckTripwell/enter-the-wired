@@ -182,6 +182,7 @@ The installer will automatically install Konsole. If you prefer a different term
 - **ciscosweater** - Main maintainer
 - **JD Ros** (YouTube) - LD_AUDIT integration research
 - **AceSLS** - SLSsteam developer
+- **Deadboy666** - Steam patch logic on Headcrab
 - Community contributors
 
 ## License
