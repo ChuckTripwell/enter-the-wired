@@ -387,9 +387,9 @@ detect_distro_family() {
         return 0
     fi
 
-    # Bazzite - based on Fedora Atomic
+    # Bazzite - based on Fedora Atomic (uses rpm-ostree, skip dependency install)
     if [[ "$ID" == "bazzite" ]]; then
-        echo "fedora"
+        echo "bazzite"
         return 0
     fi
 
@@ -596,17 +596,23 @@ install_slssteam() {
     # Install SLSsteam dependencies one by one, skipping unavailable ones
     echo "Installing SLSsteam dependencies..."
     case "$FAMILY" in
+        bazzite)
+            # Bazzite uses rpm-ostree - dependencies should already be in the base image
+            echo "  Bazzite detected - skipping dependency installation (packages are in base image)"
+            ;;
         fedora)
             SLS_PACKAGES="git libnotify curl libcurl-devel openssl-devel libcrypto-devel 7zip p7zip-plugins"
+            install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
             ;;
         debian)
             SLS_PACKAGES="git libnotify-bin curl 7zip-full libcurl4-openssl-dev libcurl4 libcurl4:i386 libcurl libcurl:i386 libssl3 libssl-dev libcrypto++6 libcrypto++-dev libxcb-cursor0"
+            install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
             ;;
         arch)
             SLS_PACKAGES="git libnotify curl 7zip"
+            install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
             ;;
     esac
-    install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
 
     # Enable i386 architecture for Debian/Ubuntu if needed
     if [ "$FAMILY" = "debian" ]; then
@@ -633,6 +639,11 @@ install_slssteam() {
         echo -e "${YELLOW}Warning: 7z not found, using unzip as fallback${NC}"
         EXTRACT_CMD="unzip -AA"
         EXTRACT_TYPE="unzip"
+    elif [ "$FAMILY" = "bazzite" ]; then
+        # Bazzite: 7z should be in base image, warn and fail
+        echo -e "${YELLOW}Warning: 7z not available on Bazzite${NC}"
+        echo "SLSsteam installation will be skipped."
+        return 1
     else
         echo "Installing p7zip..."
         if case "$FAMILY" in
@@ -662,6 +673,11 @@ install_slssteam() {
     elif command -v curl >/dev/null 2>&1; then
         echo -e "${YELLOW}Warning: wget not found, using curl as fallback${NC}"
         DOWNLOAD_CMD="curl -sL -o"
+    elif [ "$FAMILY" = "bazzite" ]; then
+        # Bazzite: wget/curl should be in base image, warn and fail
+        echo -e "${YELLOW}Warning: Neither wget nor curl available on Bazzite${NC}"
+        echo "SLSsteam installation will be skipped."
+        return 1
     else
         echo "Installing wget..."
         if case "$FAMILY" in
