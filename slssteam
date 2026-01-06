@@ -135,29 +135,45 @@ run_steam_with_sls() {
 }
 
 # Function to close Steam gracefully via steam://exit
+# Returns 0 if steam://exit was sent (Steam was open or will open briefly), 1 if Steam not found
 close_steam_graceful() {
     local steam_exe
 
     if ! steam_exe=$(find_steam_executable 2>/dev/null); then
-        echo "  Warning: Steam executable not found, using kill fallback"
-        pkill -x steam 2>/dev/null || true
+        echo "  Warning: Steam executable not found"
         return 1
     fi
 
     echo "  Closing Steam gracefully via steam://exit..."
     $steam_exe steam://exit 2>/dev/null || true
+    return 0
 }
 
 # Function to close Steam (tries graceful first, then kill)
+# Returns 0 if Steam was closed successfully, 1 if it couldn't be closed
 close_steam() {
-    local steam_pids
+    local steam_pids closed=0
 
     # Try graceful close first
-    close_steam_graceful
+    if close_steam_graceful; then
+        # Wait for Steam to close gracefully
+        sleep 3
 
-    # Wait a bit then force kill if still running
-    sleep 3
+        # Check if Steam is still running
+        steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
+        if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
+            steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
+        fi
 
+        if [ -z "$steam_pids" ]; then
+            echo "  Steam closed gracefully"
+            return 0
+        fi
+
+        echo "  Steam still running, force closing..."
+    fi
+
+    # Force kill if still running
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
     if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
         steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
@@ -168,6 +184,18 @@ close_steam() {
         echo "$steam_pids" | xargs kill 2>/dev/null || true
         sleep 2
     fi
+
+    # Verify Steam is closed
+    steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
+    if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
+        steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
+    fi
+
+    if [ -z "$steam_pids" ]; then
+        return 0
+    fi
+
+    return 1
 }
 
 # Function to create wrapper at /usr/local/bin/steam for Bazzite Game Mode
@@ -274,52 +302,41 @@ finalize_steam() {
         echo "  Removed steam.cfg"
     fi
 
-    # Close Steam gracefully (tries steam://exit first, then kill)
-    close_steam
-
-    # For Steam Deck: Don't run Steam here, just prepare for patching
-    # Gaming Mode uses steam-jupiter which needs to be patched after Steam closes
-    if [ -f "$steam_jupiter" ]; then
-        echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
-        echo "  Starting Steam briefly to check for updates..."
-        # Start Steam briefly then close it
-        if command -v steam &>/dev/null; then
-            steam &
-            RUN_STEAM_PID=$!
-            sleep 10
-            close_steam
-        fi
+    # Close Steam via steam://exit
+    # If Steam is running: closes it gracefully
+    # If Steam is closed: opens briefly to execute exit, updates, and closes
+    # In both cases, we don't need to open Steam again
+    if close_steam_graceful; then
+        echo "  Steam will close and update via steam://exit"
     else
-        # For non-Steam Deck: Run Steam with SLSsteam (allows Steam to update if needed)
-        echo "  Starting Steam (will auto-update if needed)..."
-        run_steam_with_sls &
-        RUN_STEAM_PID=$!
+        # Steam executable not found, try to open it if needed
+        if [ -f "$steam_jupiter" ]; then
+            echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
+        else
+            echo "  Steam not found, opening to check for updates..."
+            if command -v steam &>/dev/null; then
+                run_steam_with_sls &
+                RUN_STEAM_PID=$!
+                sleep 5
 
-        # Wait for Steam to open
-        sleep 5
+                # Wait for Steam to fully start
+                local attempts=0
+                while [ $attempts -lt 12 ]; do
+                    if pgrep -x "steam" &>/dev/null || \
+                       ([ -d "$FLATPAK_STEAM_DIR" ] && pgrep -f "com.valvesoftware.Steam" &>/dev/null); then
+                        break
+                    fi
+                    sleep 1
+                    attempts=$((attempts + 1))
+                done
 
-        # Wait for Steam to fully start (check both native and flatpak)
-        local attempts=0
-        while [ $attempts -lt 12 ]; do
-            steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-            if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
-                steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
+                # Give Steam time to update
+                sleep 30
+
+                close_steam
+                kill $RUN_STEAM_PID 2>/dev/null || true
             fi
-            if [ -n "$steam_pids" ]; then
-                break
-            fi
-            sleep 1
-            attempts=$((attempts + 1))
-        done
-
-        # Give Steam time to update
-        sleep 30
-
-        # Close Steam gracefully
-        close_steam
-
-        # Also kill the background run we started
-        kill $RUN_STEAM_PID 2>/dev/null || true
+        fi
     fi
 
     # Create steam.cfg to block future updates
@@ -463,16 +480,6 @@ configure_slssteam_injection() {
     sudo sed -i '/^exec.*steam.*"\$\@"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_script"
 
     # Note: Desktop shortcuts are already patched by SLSsteam's setup.sh install
-
-    # Enable PlayNotOwnedGames in config
-    local config_file
-    config_file=$(get_sls_config_dir)/config.yaml
-    if [[ -f "$config_file" ]]; then
-        if grep -q "^PlayNotOwnedGames:" "$config_file"; then
-            sed -i 's/^PlayNotOwnedGames:.*/PlayNotOwnedGames: yes/' "$config_file"
-            echo "  PlayNotOwnedGames enabled"
-        fi
-    fi
 
     # Enable SafeMode ONLY on Steam Deck
     if is_steam_deck; then
@@ -731,14 +738,6 @@ install_slssteam() {
         if [ -f "/tmp/slssteam_extract/res/config.yaml" ]; then
             cp /tmp/slssteam_extract/res/config.yaml "$SLSSTEAM_CONFIG_DIR/config.yaml"
         fi
-    fi
-
-    if grep -q "^PlayNotOwnedGames:" "$SLSSTEAM_CONFIG_DIR/config.yaml" 2>/dev/null; then
-        sed -i 's/^PlayNotOwnedGames:.*/PlayNotOwnedGames: yes/' "$SLSSTEAM_CONFIG_DIR/config.yaml"
-        echo "PlayNotOwnedGames enabled in config."
-    else
-        echo "PlayNotOwnedGames: yes" >> "$SLSSTEAM_CONFIG_DIR/config.yaml"
-        echo "PlayNotOwnedGames added to config."
     fi
 
     # Run SLSsteam setup.sh install (handles wrappers, desktop files, etc.)
