@@ -18,8 +18,8 @@ else
 fi
 
 # Configuration
-ACCELA_URL="https://www.dropbox.com/scl/fi/fybedet77jx477qb0ve9h/ACCELA-2026.01.01-15_42_36-linux-source.tar.gz?rlkey=b43ti2wrqertc3fjlh6svahy2&st=cnbn1rat&dl=1"
-ACCELA_APPIMAGE_URL="https://www.dropbox.com/scl/fi/6dojrhe1kykya6up1x2aa/ACCELA-2026.01.01-15_42_36-linux-appimage.tar.gz?rlkey=gnl9k4jbdc1h1gjoswqnbinx5&st=smapbmfl&dl=1"
+ACCELA_URL="https://www.dropbox.com/scl/fi/oqmg92s2vmcagux0zz33r/ACCELA-2026.01.05-21_22_15-linux-source.tar.gz?rlkey=zt3hiqqrswrpr4asm8mmz4f9z&st=g6ptgsu0&dl=1"
+ACCELA_APPIMAGE_URL="https://www.dropbox.com/scl/fi/wxde12t9tpxanbv225ixj/ACCELA-2026.01.05-21_22_15-linux-appimage.tar.gz?rlkey=vuzs9nz8jdnzvluj02zzmxb35&st=njp6dncw&dl=1"
 TEMP_ARCHIVE="accela_source.tar.gz"
 INSTALL_DIR="$HOME/accela"
 
