@@ -19,12 +19,9 @@ fi
 
 # Legacy variables for backward compatibility
 STEAM_DIR="$HOME/.steam/steam"
-FLATPAK_STEAM_DIR="$HOME/.var/app/com.valvesoftware.Steam/.steam/steam"
-FLATPAK_SLS_INSTALL_DIR="$HOME/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam"
-FLATPAK_SLS_CONFIG_DIR="$HOME/.var/app/com.valvesoftware.Steam/.config/SLSsteam"
 REPO_SLS_LOCATION="/usr/lib32"
 
-# Function to find Steam executable (handles native, Flatpak, custom paths)
+# Function to find Steam executable
 find_steam_executable() {
     # 1. Use standard Steam path
     if [ -f "/usr/bin/steam" ]; then
@@ -32,21 +29,13 @@ find_steam_executable() {
         return 0
     fi
 
-    # 2. Check if Flatpak Steam is available
-    if command -v flatpak &>/dev/null; then
-        if flatpak info com.valvesoftware.Steam &>/dev/null 2>&1; then
-            echo "flatpak run com.valvesoftware.Steam"
-            return 0
-        fi
-    fi
-
-    # 3. Check PATH for steam command (fallback)
+    # 2. Check PATH for steam command (fallback)
     if command -v steam &>/dev/null; then
         echo "$(command -v steam)"
         return 0
     fi
 
-    # 4. Check alternative paths
+    # 3. Check alternative paths
     for path in /usr/local/bin/steam "$HOME/.local/bin/steam"; do
         if [ -f "$path" ] && [ -x "$path" ]; then
             echo "$path"
@@ -57,13 +46,12 @@ find_steam_executable() {
     return 1
 }
 
-# Function to find Steam directory (handles native, Flatpak, custom paths)
+# Function to find Steam directory
 find_steam_directory() {
     # Common Steam installation paths (in order of preference)
     local steam_paths=(
         "$HOME/.steam/steam"                    # Modern Steam
         "$HOME/.local/share/Steam"              # Traditional location
-        "$FLATPAK_STEAM_DIR"                    # Flatpak Steam
         "/opt/steam/steam"                      # Custom /opt
         "/usr/local/steam"                      # Custom /usr/local
     )
@@ -97,27 +85,11 @@ get_steam_dir() {
 }
 
 get_sls_install_dir() {
-    if find_steam_directory &>/dev/null; then
-        if [ -d "$FLATPAK_STEAM_DIR" ]; then
-            echo "$FLATPAK_SLS_INSTALL_DIR"
-        else
-            echo "$HOME/.local/share/SLSsteam"
-        fi
-    else
-        echo "$HOME/.local/share/SLSsteam"
-    fi
+    echo "$HOME/.local/share/SLSsteam"
 }
 
 get_sls_config_dir() {
-    if find_steam_directory &>/dev/null; then
-        if [ -d "$FLATPAK_STEAM_DIR" ]; then
-            echo "$FLATPAK_SLS_CONFIG_DIR"
-        else
-            echo "$HOME/.config/SLSsteam"
-        fi
-    else
-        echo "$HOME/.config/SLSsteam"
-    fi
+    echo "$HOME/.config/SLSsteam"
 }
 
 # Function to run Steam with SLSsteam injection
@@ -161,9 +133,6 @@ close_steam() {
 
         # Check if Steam is still running
         steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-        if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
-            steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
-        fi
 
         if [ -z "$steam_pids" ]; then
             echo "  Steam closed gracefully"
@@ -175,9 +144,6 @@ close_steam() {
 
     # Force kill if still running
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-    if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
-        steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
-    fi
 
     if [ -n "$steam_pids" ]; then
         echo "  Force closing Steam..."
@@ -187,9 +153,6 @@ close_steam() {
 
     # Verify Steam is closed
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-    if [ -z "$steam_pids" ] && [ -d "$FLATPAK_STEAM_DIR" ]; then
-        steam_pids=$(pgrep -f "com.valvesoftware.Steam" 2>/dev/null || true)
-    fi
 
     if [ -z "$steam_pids" ]; then
         return 0
@@ -322,8 +285,7 @@ finalize_steam() {
                 # Wait for Steam to fully start
                 local attempts=0
                 while [ $attempts -lt 12 ]; do
-                    if pgrep -x "steam" &>/dev/null || \
-                       ([ -d "$FLATPAK_STEAM_DIR" ] && pgrep -f "com.valvesoftware.Steam" &>/dev/null); then
+                    if pgrep -x "steam" &>/dev/null; then
                         break
                     fi
                     sleep 1
@@ -419,7 +381,7 @@ get_ld_audit() {
         return 0
     fi
 
-    # Fallback to local/flatpak install
+    # Fallback to local user install
     sls_dir=$(get_sls_install_dir)
     # Hardcoded order: library-inject.so must be first for LD_AUDIT
     echo "$sls_dir/library-inject.so:$sls_dir/SLSsteam.so"
