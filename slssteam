@@ -23,19 +23,30 @@ REPO_SLS_LOCATION="/usr/lib32"
 
 # Function to find Steam executable
 find_steam_executable() {
-    # 1. Use standard Steam path
-    if [ -f "/usr/bin/steam" ]; then
+    # Detect Bazzite early to skip /usr/bin/steam
+    local is_bazzite=0
+    if [ -f /etc/os-release ]; then
+        source /etc/os-release
+        [ "$ID" = "bazzite" ] && is_bazzite=1
+    fi
+
+    # 1. Use standard Steam path (skip on Bazzite)
+    if [ $is_bazzite -eq 0 ] && [ -f "/usr/bin/steam" ]; then
         echo "/usr/bin/steam"
         return 0
     fi
 
-    # 2. Check PATH for steam command (fallback)
+    # 2. Check PATH for steam command (skip /usr/bin/steam on Bazzite)
     if command -v steam &>/dev/null; then
-        echo "$(command -v steam)"
-        return 0
+        local steam_path
+        steam_path=$(command -v steam)
+        if [ $is_bazzite -eq 0 ] || [ "$steam_path" != "/usr/bin/steam" ]; then
+            echo "$steam_path"
+            return 0
+        fi
     fi
 
-    # 3. Check alternative paths
+    # 3. Check alternative paths (skip on Bazzite)
     for path in /usr/local/bin/steam "$HOME/.local/bin/steam"; do
         if [ -f "$path" ] && [ -x "$path" ]; then
             echo "$path"
@@ -191,8 +202,21 @@ patch_steam_jupiter() {
     local steam_jupiter="/usr/bin/steam-jupiter"
     local ld_audit
 
+    # Detect Bazzite (read-only /usr)
+    local is_bazzite=0
+    if [ -f /etc/os-release ]; then
+        source /etc/os-release
+        [ "$ID" = "bazzite" ] && is_bazzite=1
+    fi
+
     if [ ! -f "$steam_jupiter" ]; then
         echo "  steam-jupiter not found at $steam_jupiter (not a Steam Deck)"
+        return 0
+    fi
+
+    # Skip patching on Bazzite (read-only file system)
+    if [ $is_bazzite -eq 1 ]; then
+        echo "  Skipping steam-jupiter patch on Bazzite (read-only)"
         return 0
     fi
 
@@ -402,6 +426,13 @@ configure_slssteam_injection() {
     local steam_script
     local ld_audit
 
+    # Detect Bazzite (read-only /usr)
+    local is_bazzite=0
+    if [ -f /etc/os-release ]; then
+        source /etc/os-release
+        [ "$ID" = "bazzite" ] && is_bazzite=1
+    fi
+
     # Check for repo install first
     if is_repo_install; then
         echo "  Repo install detected"
@@ -419,6 +450,13 @@ configure_slssteam_injection() {
     if ! steam_script=$(find_steam_executable 2>/dev/null); then
         echo -e "${YELLOW}Warning: Steam executable not found${NC}"
         echo "SLSsteam injection will be skipped. Re-run after installing Steam."
+        return 0
+    fi
+
+    # Skip patching on Bazzite if steam_script is /usr/bin/steam (read-only)
+    if [ $is_bazzite -eq 1 ] && [ "$steam_script" = "/usr/bin/steam" ]; then
+        echo -e "${YELLOW}Skipping /usr/bin/steam on Bazzite (read-only)${NC}"
+        echo "SLSsteam injection will use PATH steam command instead."
         return 0
     fi
 
