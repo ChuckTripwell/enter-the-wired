@@ -18,8 +18,8 @@ else
 fi
 
 # Configuration
-ACCELA_URL="https://www.dropbox.com/scl/fi/ipj4oz1thxgmtngqeyhcg/ACCELA-2026.01.07-11_05_02-linux-source.tar.gz?rlkey=codbktm3p22vj4b3o8znddi8r&st=n9sxompp&dl=1"
-ACCELA_APPIMAGE_URL="https://www.dropbox.com/scl/fi/phwkahxhadxji8bx9z2vj/ACCELA-2026.01.07-11_05_02-linux-appimage.tar.gz?rlkey=wtq8lmd4oer2xlk4cl1mhu2t3&st=hb9m47jb&dl=1"
+ACCELA_URL="https://pixeldrain.com/api/file/qaW8vQ7M?download"
+ACCELA_APPIMAGE_URL="https://pixeldrain.com/api/file/xzPotoJS?download"
 TEMP_ARCHIVE="accela_source.tar.gz"
 INSTALL_DIR="$HOME/accela"
 
