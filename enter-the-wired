@@ -56,7 +56,7 @@ else
     fi
 fi
 
-# Source the scripts to load their functions
+# Source the scripts - they will auto-execute install_accela and install_slssteam
 source "$SCRIPT_DIR/accela"
 source "$SCRIPT_DIR/slssteam"
 
@@ -65,16 +65,8 @@ echo "  ENTER THE WIRED - Combo Installer"
 echo "==============================================${NC}"
 echo ""
 
-# is_steam_deck() and get_sls_install_dir() are already sourced from slssteam
-
-echo "Installing ACCELA..."
-echo "----------------------------------------------"
-install_accela
-
-echo ""
-echo "Installing SLSsteam..."
-echo "----------------------------------------------"
-install_slssteam
+echo "If you have issues with missing dependencies, run:"
+echo "  ./fix-deps"
 
 echo ""
 echo "=============================================="
@@ -84,35 +76,6 @@ echo ""
 echo "  ACCELA:    Installed at ~/.local/share/ACCELA"
 echo "  SLSsteam:  Installed at $(get_sls_install_dir)"
 echo "  Scripts:   Saved at ~/enter-the-wired"
-echo ""
-
-# Steam Deck specific message
-if is_steam_deck; then
-    echo -e "${YELLOW}  Steam Deck detected!${NC}"
-    echo ""
-    echo "  - SLSsteam patched in steam-jupiter for Gaming Mode"
-    echo "  - Use Game Mode to launch ACCELA"
-    echo "  - SLSsteam SafeMode is enabled for stability"
-    echo "  - WARNING: Steam updates will reset the patch!"
-    echo "  - Re-run this script after Steam updates"
-else
-    echo "  Launch ACCELA from your applications menu."
-fi
-
-# Bazzite specific message
-if [ -f /etc/os-release ]; then
-    source /etc/os-release
-    if [[ "$ID" == "bazzite" ]]; then
-        echo ""
-        echo -e "${YELLOW}  Bazzite detected!${NC}"
-        echo ""
-        echo "  - ACCELA should appear in your app launcher"
-        echo "  - For desktop mode, use the Applications menu"
-        echo "  - Steam Deck plugins (Decky Loader) are pre-installed"
-    fi
-fi
-
-echo ""
 echo "  To play with SLSsteam, just restart Steam."
 echo ""
 
@@ -127,12 +90,14 @@ mkdir -p "$ENTER_THE_WIRED_DIR"
 curl -fsSL -o "$ENTER_THE_WIRED_DIR/accela" "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/accela"
 curl -fsSL -o "$ENTER_THE_WIRED_DIR/cyberia" "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/cyberia"
 curl -fsSL -o "$ENTER_THE_WIRED_DIR/slssteam" "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/slssteam"
+curl -fsSL -o "$ENTER_THE_WIRED_DIR/fix-deps" "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/fix-deps"
 curl -fsSL -o "$ENTER_THE_WIRED_DIR/uninstall" "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/uninstall"
 
 # Set execute permissions
 chmod +x "$ENTER_THE_WIRED_DIR/accela" \
          "$ENTER_THE_WIRED_DIR/cyberia" \
          "$ENTER_THE_WIRED_DIR/slssteam" \
+         "$ENTER_THE_WIRED_DIR/fix-deps" \
          "$ENTER_THE_WIRED_DIR/uninstall"
 
 echo -e "${GREEN}Scripts saved to $ENTER_THE_WIRED_DIR${NC}"
@@ -151,7 +116,10 @@ echo ""
 echo "  ~/enter-the-wired/accela      - Install/upgrade ACCELA"
 echo "  ~/enter-the-wired/cyberia     - Install Millennium + Steam integration"
 echo "  ~/enter-the-wired/slssteam    - Install Steam Linux Runtime"
+echo "  ~/enter-the-wired/fix-deps     - Fix missing system dependencies"
 echo "  ~/enter-the-wired/uninstall   - Remove all installations"
+echo ""
+echo "  If you have missing dependencies or ran into issues trying to use ACCELA or SLSsteam, run: ./fix-deps"
 echo ""
 echo -e "${YELLOW}About Cyberia:${NC}"
 echo "  cyberia installs the Millennium framework and the Cyberia plugin,"

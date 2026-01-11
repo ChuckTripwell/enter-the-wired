@@ -23,237 +23,23 @@ ACCELA_APPIMAGE_URL="https://github.com/ciscosweater/enter-the-wired/releases/do
 TEMP_ARCHIVE="accela_source.tar.gz"
 INSTALL_DIR="$HOME/accela"
 
-# Detect distribution family
-detect_distro_family() {
-    # Source /etc/os-release
+# Check if running on Bazzite or SteamOS (uses AppImage)
+is_steamos_family() {
     if [ -f /etc/os-release ]; then
         source /etc/os-release
+        [[ "$ID" == "steamos" ]] || [[ "$ID" == "bazzite" ]] && return 0
     fi
-
-    ID_LIKE="${ID_LIKE:-}"
-
-    # SteamOS (HoloISO) - based on Arch Linux
-    if [[ "$ID" == "steamos" ]] || [[ "$ID_LIKE" =~ "steamos" ]]; then
-        echo "arch"
-        return 0
-    fi
-
-    # Bazzite - based on Fedora Atomic
-    if [[ "$ID" == "bazzite" ]]; then
-        echo "fedora"
-        return 0
-    fi
-
-    # Fedora/RHEL/CentOS
-    if [[ "$ID" == "fedora" || "$ID" == "rhel" || "$ID" == "centos" || \
-          "$ID_LIKE" =~ "fedora" || "$ID_LIKE" =~ "rhel" ]]; then
-        echo "fedora"
-        return 0
-    fi
-
-    # Debian/Ubuntu
-    if [[ "$ID" == "debian" || "$ID" == "ubuntu" || \
-          "$ID_LIKE" =~ "debian" || "$ID_LIKE" =~ "ubuntu" ]]; then
-        echo "debian"
-        return 0
-    fi
-
-    # Arch Linux
-    if [[ "$ID" == "arch" || "$ID_LIKE" =~ "arch" ]] || \
-       [ -f "/etc/arch-release" ]; then
-        echo "arch"
-        return 0
-    fi
-
     return 1
-}
-
-# Helper function to install packages one by one, skipping unavailable ones
-install_packages_one_by_one() {
-    local packages="$1"
-    local family="$2"
-    local count=0
-    local skipped=0
-
-    for pkg in $packages; do
-        count=$((count + 1))
-
-        case "$family" in
-            fedora)
-                if sudo dnf install -y --setopt=install_weak_deps=False "$pkg" 2>/dev/null; then
-                    echo -e "  ${GREEN}✓${NC} $pkg"
-                else
-                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
-                    skipped=$((skipped + 1))
-                fi
-                ;;
-            debian)
-                if sudo apt-get install -y -m "$pkg" 2>/dev/null; then
-                    echo -e "  ${GREEN}✓${NC} $pkg"
-                else
-                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
-                    skipped=$((skipped + 1))
-                fi
-                ;;
-            arch)
-                if sudo pacman -Sy --noconfirm "$pkg" 2>/dev/null; then
-                    echo -e "  ${GREEN}✓${NC} $pkg"
-                else
-                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
-                    skipped=$((skipped + 1))
-                fi
-                ;;
-        esac
-    done
-
-    if [ $skipped -gt 0 ]; then
-        echo -e "  ${YELLOW}Skipped $skipped unavailable packages${NC}"
-    fi
 }
 
 # Install ACCELA
 install_accela() {
     echo -e "${GREEN}Installing ACCELA...${NC}"
+    echo ""
 
     # Load os-release for ID detection
     if [ -f /etc/os-release ]; then
         source /etc/os-release
-    fi
-
-    FAMILY=$(detect_distro_family)
-
-    if [ -z "$FAMILY" ]; then
-        echo -e "${YELLOW}Warning: Could not detect distribution family.${NC}"
-        echo "Defaulting to debian family (apt). You can override with: FAMILY=debian|arch|fedora $0"
-        FAMILY="debian"
-    fi
-
-    echo -e "Detected system: ${GREEN}$FAMILY${NC} family"
-
-    # Terminals to check (in order of preference)
-    LINUX_TERMINALS=("wezterm" "konsole" "gnome-terminal" "ptyxis" "alacritty" "tilix" "xfce4-terminal" "terminator" "mate-terminal" "lxterminal" "xterm" "kitty")
-
-    # Function to find installed terminal
-    find_installed_terminal() {
-        for terminal in "${LINUX_TERMINALS[@]}"; do
-            if command -v "$terminal" &>/dev/null; then
-                echo "$terminal"
-                return 0
-            fi
-        done
-        return 1
-    }
-
-    # Function to install Konsole
-    install_konsole() {
-        echo -e "${YELLOW}No terminal found. Installing Konsole...${NC}"
-        case "$FAMILY" in
-            fedora)
-                sudo dnf install -y konsole
-                ;;
-            debian)
-                sudo apt install -y konsole
-                ;;
-            arch)
-                sudo pacman -Sy --noconfirm konsole
-                ;;
-            *)
-                echo -e "${RED}Cannot install Konsole automatically on this distribution.${NC}"
-                return 1
-                ;;
-        esac
-    }
-
-    # Check for installed terminal
-    INSTALLED_TERMINAL=$(find_installed_terminal)
-    if [ -n "$INSTALLED_TERMINAL" ]; then
-        echo "Found terminal: $INSTALLED_TERMINAL"
-    else
-        install_konsole
-        if command -v konsole &>/dev/null; then
-            echo "Konsole installed successfully."
-        fi
-    fi
-
-    # Configure package manager and dependencies
-    case "$FAMILY" in
-        fedora)
-            echo -e "Detected system: ${GREEN}Fedora${NC} family"
-            PACKAGE_LIST="python3 python3-venv python3.12-venv python3.13-venv python3-pip python3-devel SDL2-devel gcc SDL2_mixer-devel SDL2_image-devel SDL2_ttf-devel git libnotify-devel p7zip p7zip-plugins"
-
-            # Check for rpm-ostree (Fedora Atomic/Silverblue/Kinoite/Bazzite)
-            if command -v rpm-ostree &>/dev/null && rpm-ostree status &>/dev/null 2>&1; then
-                echo -e "${YELLOW}Warning: Immutable Fedora detected (rpm-ostree)${NC}"
-                echo ""
-                echo "This system uses an immutable file system. Choose an option below:"
-                echo ""
-                echo "  Option 1: Install via rpm-ostree (requires reboot)"
-                echo "    rpm-ostree install python3 python3-pip SDL2-devel gcc SDL2_mixer-devel"
-                echo "    Then reboot your system."
-                echo ""
-                echo "  Option 2: Use Distrobox (no reboot needed)"
-                echo "    # Create a Fedora container:"
-                echo "    distrobox-create --image fedora:40 --name fedora-dev"
-                echo "    distrobox-enter fedora-dev"
-                echo "    sudo dnf install -y python3 python3-pip SDL2-devel gcc"
-                echo ""
-                echo "  Option 3: Use Homebrew (Bazzite default)"
-                echo "    brew install python3 sdl2"
-                echo ""
-                echo "For more info: https://docs.bazzite.gg/Installing_and_Managing_Software/"
-                echo ""
-                SKIP_DEPS=true
-            else
-                SKIP_DEPS=false
-            fi
-            ;;
-        debian)
-            echo -e "Detected system: ${GREEN}Debian/Ubuntu${NC} family"
-            PACKAGE_LIST="python3 python3-pip python3-dev python3-venv python3.12-venv python3.13-venv libsdl2-dev build-essential libsdl2-mixer-dev libsdl2-image-dev libsdl2-ttf-dev libxcb-cursor0 libcurl4-openssl-dev git libnotify-bin p7zip-full libcurl libcurl4:i386 libssl3:i386 libcrypto++6:i386"
-            NEEDS_UPDATE=true
-            SKIP_DEPS=false
-            ;;
-        arch)
-            echo -e "Detected system: ${GREEN}Arch Linux${NC} family"
-            PACKAGE_LIST="python python-pip sdl2 gcc sdl2_image sdl2_ttf libxcb curl git libnotify 7zip"
-
-            # Check if multilib repo is enabled
-            if ! grep -q "^\[multilib\]" /etc/pacman.conf; then
-                echo -e "${YELLOW}Warning: multilib repository is not enabled in /etc/pacman.conf${NC}"
-                echo "Enable it by uncommenting the [multilib] section for 32-bit Steam support."
-                echo "After enabling, run: sudo pacman -Sy"
-            fi
-            SKIP_DEPS=false
-            ;;
-        *)
-            echo -e "${RED}Distribution not automatically supported.${NC}"
-            echo ""
-            echo "Please install dependencies manually:"
-            echo "  - Python 3.x with pip"
-            echo "  - SDL2 (libsdl2-dev)"
-            echo "  - SDL2 Mixer (libsdl2-mixer-dev)"
-            echo "  - SDL2 Image (libsdl2-image-dev)"
-            echo "  - SDL2 TTF (libsdl2-ttf-dev)"
-            echo "  - libnotify"
-            echo "  - GCC/G++"
-            SKIP_DEPS=true
-            ;;
-    esac
-
-    # Extra step for Debian/Ubuntu
-    if [ "${NEEDS_UPDATE:-false}" = true ]; then
-        echo "Enabling 32-bit (i386) architecture..."
-        sudo dpkg --add-architecture i386
-        echo "Updating repository lists..."
-        sudo apt update
-    fi
-
-    # Install packages one by one, skipping unavailable ones
-    if [ "${SKIP_DEPS:-false}" = true ]; then
-        echo "Skipping system dependency installation."
-    else
-        echo "Installing dependencies..."
-        install_packages_one_by_one "$PACKAGE_LIST" "$FAMILY"
     fi
 
     # Install .NET SDK 9.0
@@ -262,14 +48,13 @@ install_accela() {
         echo -e "${YELLOW}Warning: .NET SDK installation failed. Continuing anyway...${NC}"
     fi
 
-    # Add .NET to PATH for current session
     export PATH="$HOME/.dotnet:$PATH"
 
     # Cleanup to avoid conflicts with previous installation attempts
     rm -rf ACCELA-*-linux-source ACCELA-*-linux-appimage "$TEMP_ARCHIVE"
 
     # Choose URL based on distribution
-    if [[ "$ID" == "steamos" ]] || [[ "$ID" == "bazzite" ]]; then
+    if is_steamos_family; then
         ACCELA_URL="$ACCELA_APPIMAGE_URL"
         TEMP_ARCHIVE="accela_appimage.tar.gz"
         echo "Using AppImage for SteamOS/Bazzite..."
@@ -297,8 +82,7 @@ install_accela() {
         return 1
     fi
 
-    # Get file size with portable stat syntax
-    FILE_SIZE=$(stat -c%s "$TEMP_ARCHIVE" 2>/dev/null || stat -f%z "$TEMP_ARCHIVE" 2>/dev/null || echo 0)
+    local FILE_SIZE=$(stat -c%s "$TEMP_ARCHIVE" 2>/dev/null || stat -f%z "$TEMP_ARCHIVE" 2>/dev/null || echo 0)
     if [ "$FILE_SIZE" -lt 1024 ]; then
         echo -e "${RED}Error: Downloaded file is too small (corrupted).${NC}"
         rm -f "$TEMP_ARCHIVE" 2>/dev/null
@@ -339,30 +123,6 @@ install_accela() {
         return 1
     fi
 
-    # Install required libraries for ACCELA
-    ACCELA_DIR="$HOME/.local/share/ACCELA"
-
-    if [ ! -d "$ACCELA_DIR" ]; then
-        echo -e "${YELLOW}Warning: ACCELA directory not found at $ACCELA_DIR${NC}"
-        echo "Skipping Python dependencies installation."
-    else
-        cd "$ACCELA_DIR"
-
-        if [ ! -d ".venv" ]; then
-            echo -e "${YELLOW}Warning: Virtualenv not found.${NC}"
-            echo "Skipping Python dependencies installation."
-        else
-            source ./.venv/bin/activate
-
-            # CC=gcc CXX=g++ override pygame's requirement for "gcc-12"
-            echo "Installing Python dependencies..."
-            if ! CC=gcc CXX=g++ pip install --no-cache-dir --force-reinstall -r "$ACCELA_DIR/requirements.txt" 2>&1; then
-                echo -e "${YELLOW}Warning: Some Python dependencies could not be installed.${NC}"
-                echo "Continuing anyway..."
-            fi
-        fi
-    fi
-
     # Clean up installer directory
     echo "Cleaning up temporary files..."
     rm -rf "$INSTALL_DIR"
@@ -370,8 +130,4 @@ install_accela() {
     echo -e "${GREEN}ACCELA installed successfully!${NC}"
 }
 
-# Run installation if script is executed directly (not sourced)
-# Also run if executed via curl | bash (BASH_SOURCE[0] == "-")
-if [ -z "${BASH_SOURCE:-}" ] || [ ${#BASH_SOURCE[@]} -eq 0 ] || [[ "${BASH_SOURCE[0]:-}" == "-" ]] || [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
-    install_accela
-fi
+install_accela "$@"

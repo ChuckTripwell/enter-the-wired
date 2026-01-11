@@ -109,6 +109,19 @@ get_sls_config_dir() {
     echo "$HOME/.config/SLSsteam"
 }
 
+# Function to detect Steam Deck (SteamOS)
+is_steam_deck() {
+    if [ -f /etc/os-release ]; then
+        source /etc/os-release
+    fi
+
+    if [[ "$ID" == "steamos" ]] || [[ "${VARIANT_ID:-}" == "steamdeck" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Function to run Steam with SLSsteam injection
 run_steam_with_sls() {
     local steam_exe
@@ -124,7 +137,6 @@ run_steam_with_sls() {
 }
 
 # Function to close Steam gracefully via steam://exit
-# Returns 0 if steam://exit was sent (Steam was open or will open briefly), 1 if Steam not found
 close_steam_graceful() {
     local steam_exe
 
@@ -139,43 +151,30 @@ close_steam_graceful() {
 }
 
 # Function to close Steam (tries graceful first, then kill)
-# Returns 0 if Steam was closed successfully, 1 if it couldn't be closed
 close_steam() {
-    local steam_pids closed=0
+    local steam_pids
 
     # Try graceful close first
     if close_steam_graceful; then
-        # Wait for Steam to close gracefully
         sleep 3
 
-        # Check if Steam is still running
         steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-
         if [ -z "$steam_pids" ]; then
             echo "  Steam closed gracefully"
             return 0
         fi
-
         echo "  Steam still running, force closing..."
     fi
 
-    # Force kill if still running
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-
     if [ -n "$steam_pids" ]; then
         echo "  Force closing Steam..."
         echo "$steam_pids" | xargs kill 2>/dev/null || true
         sleep 2
     fi
 
-    # Verify Steam is closed
     steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
-
-    if [ -z "$steam_pids" ]; then
-        return 0
-    fi
-
-    return 1
+    [ -z "$steam_pids" ]
 }
 
 # Function to create wrapper at /usr/local/bin/steam
@@ -185,13 +184,11 @@ create_steam_wrapper() {
 
     ld_audit=$(get_ld_audit)
 
-    # Check if /usr/local/bin exists
     if [ ! -d "/usr/local/bin" ]; then
         echo "  Creating /usr/local/bin directory..."
         sudo mkdir -p /usr/local/bin
     fi
 
-    # Create wrapper script
     echo "  Creating Steam wrapper at $wrapper_path..."
     sudo tee "$wrapper_path" > /dev/null << EOF
 #!/usr/bin/env bash
@@ -220,7 +217,6 @@ patch_steam_jupiter() {
         return 0
     fi
 
-    # Skip patching on Bazzite (read-only file system)
     if [ $is_bazzite -eq 1 ]; then
         echo "  Skipping steam-jupiter patch on Bazzite (read-only)"
         return 0
@@ -230,24 +226,20 @@ patch_steam_jupiter() {
 
     echo "  Patching steam-jupiter at $steam_jupiter..."
 
-    # Backup original file
     if [ ! -f "${steam_jupiter}.bak" ]; then
         sudo cp "$steam_jupiter" "${steam_jupiter}.bak"
         echo "  Backup created: ${steam_jupiter}.bak"
     fi
 
-    # Check if already patched
     if grep -q "LD_AUDIT.*SLSsteam" "$steam_jupiter" 2>/dev/null; then
         echo "  steam-jupiter already patched, updating..."
         sudo sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_jupiter"
     fi
 
-    # Find the exec line with steam -steamdeck and add LD_AUDIT before it
     if grep -q 'exec /usr/lib/steam/steam -steamdeck' "$steam_jupiter" 2>/dev/null; then
         sudo sed -i '/^exec \/usr\/lib\/steam\/steam -steamdeck/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter"
         echo "  Patched steam-jupiter with LD_AUDIT"
     else
-        # Fallback: add before any exec steam line
         sudo sed -i '/^exec.*steam.*"-steamdeck"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter" 2>/dev/null || \
         sudo sed -i '/^exec.*steam/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter" 2>/dev/null || true
         echo "  Applied fallback patch to steam-jupiter"
@@ -268,13 +260,11 @@ patch_steam_sh() {
 
     ld_audit=$(get_ld_audit)
 
-    # Check if already patched (use simpler grep pattern)
     if grep -q "LD_AUDIT.*SLSsteam" "$steam_sh" 2>/dev/null; then
         echo "  steam.sh already patched, updating..."
         sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_sh"
     fi
 
-    # Add LD_AUDIT export at line 10 (same approach as headcrab.sh)
     sed -i '10a export LD_AUDIT="'"$ld_audit"'"' "$steam_sh"
     echo "  Patched steam.sh at $steam_sh"
 }
@@ -288,20 +278,14 @@ finalize_steam() {
 
     echo "Finalizing Steam configuration..."
 
-    # Remove steam.cfg to allow updates
     if [ -f "$steam_cfg" ]; then
         rm -f "$steam_cfg"
         echo "  Removed steam.cfg"
     fi
 
-    # Close Steam via steam://exit
-    # If Steam is running: closes it gracefully
-    # If Steam is closed: opens briefly to execute exit, updates, and closes
-    # In both cases, we don't need to open Steam again
     if close_steam_graceful; then
         echo "  Steam will close and update via steam://exit"
     else
-        # Steam executable not found, try to open it if needed
         if [ -f "$steam_jupiter" ]; then
             echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
         else
@@ -311,7 +295,6 @@ finalize_steam() {
                 RUN_STEAM_PID=$!
                 sleep 5
 
-                # Wait for Steam to fully start
                 local attempts=0
                 while [ $attempts -lt 12 ]; do
                     if pgrep -x "steam" &>/dev/null; then
@@ -321,7 +304,6 @@ finalize_steam() {
                     attempts=$((attempts + 1))
                 done
 
-                # Give Steam time to update
                 sleep 30
 
                 close_steam
@@ -330,7 +312,6 @@ finalize_steam() {
         fi
     fi
 
-    # Create steam.cfg to block future updates
     cat > "$steam_cfg" << 'EOF'
 BootStrapperInhibitAll=enable
 BootStrapperForceSelfUpdate=disable
@@ -339,69 +320,10 @@ EOF
     echo "Status: Patched"
 }
 
-# Detect distribution family
-detect_distro_family() {
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-    fi
-
-    ID_LIKE="${ID_LIKE:-}"
-
-    # SteamOS (HoloISO) - based on Arch Linux
-    if [[ "$ID" == "steamos" ]] || [[ "$ID_LIKE" =~ "steamos" ]]; then
-        echo "arch"
-        return 0
-    fi
-
-    # Bazzite - based on Fedora Atomic (uses rpm-ostree, skip dependency install)
-    if [[ "$ID" == "bazzite" ]]; then
-        echo "bazzite"
-        return 0
-    fi
-
-    # Fedora/RHEL/CentOS
-    if [[ "$ID" == "fedora" || "$ID" == "rhel" || "$ID" == "centos" || \
-          "$ID_LIKE" =~ "fedora" || "$ID_LIKE" =~ "rhel" ]]; then
-        echo "fedora"
-        return 0
-    fi
-
-    # Debian/Ubuntu
-    if [[ "$ID" == "debian" || "$ID" == "ubuntu" || \
-          "$ID_LIKE" =~ "debian" || "$ID_LIKE" =~ "ubuntu" ]]; then
-        echo "debian"
-        return 0
-    fi
-
-    # Arch Linux
-    if [[ "$ID" == "arch" || "$ID_LIKE" =~ "arch" ]] || \
-       [ -f "/etc/arch-release" ]; then
-        echo "arch"
-        return 0
-    fi
-
-    return 1
-}
-
-# Function to detect Steam Deck (SteamOS)
-is_steam_deck() {
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-    fi
-
-    if [[ "$ID" == "steamos" ]] || [[ "${VARIANT_ID:-}" == "steamdeck" ]]; then
-        return 0
-    fi
-
-    return 1
-}
-
 # Function to get LD_AUDIT string from SLSsteam files
 get_ld_audit() {
     local inject so_file sls_dir
 
-    # Check for repo install first (system-wide)
-    # Look for library-inject.so first, then SLSsteam.so (order matters!)
     inject=$(find "$REPO_SLS_LOCATION" -name "*library-inject*.so" -type f 2>/dev/null | head -1)
     so_file=$(find "$REPO_SLS_LOCATION" -name "*SLSsteam.so" ! -name "*library-inject*" -type f 2>/dev/null | head -1)
 
@@ -410,15 +332,12 @@ get_ld_audit() {
         return 0
     fi
 
-    # Fallback to local user install
     sls_dir=$(get_sls_install_dir)
-    # Hardcoded order: library-inject.so must be first for LD_AUDIT
     echo "$sls_dir/library-inject.so:$sls_dir/SLSsteam.so"
 }
 
 # Function to check if SLSsteam is installed in repo
 is_repo_install() {
-    # Check for either naming convention
     [ -f "$REPO_SLS_LOCATION/libSLSsteam.so" ] || \
     [ -f "$REPO_SLS_LOCATION/SLSsteam.so" ] || \
     [ -f "$REPO_SLS_LOCATION/libSLS-library-inject.so" ] || \
@@ -432,14 +351,12 @@ configure_slssteam_injection() {
     local steam_script
     local ld_audit
 
-    # Detect Bazzite (read-only /usr)
     local is_bazzite=0
     if [ -f /etc/os-release ]; then
         source /etc/os-release
         [ "$ID" = "bazzite" ] && is_bazzite=1
     fi
 
-    # Check for repo install first
     if is_repo_install; then
         echo "  Repo install detected"
         ld_audit=$(get_ld_audit)
@@ -452,14 +369,12 @@ configure_slssteam_injection() {
         ld_audit=$(get_ld_audit)
     fi
 
-    # Check if Steam executable is available (warning only)
     if ! steam_script=$(find_steam_executable 2>/dev/null); then
         echo -e "${YELLOW}Warning: Steam executable not found${NC}"
         echo "SLSsteam injection will be skipped. Re-run after installing Steam."
         return 0
     fi
 
-    # Skip patching on Bazzite if steam_script is /usr/bin/steam (read-only)
     if [ $is_bazzite -eq 1 ] && [ "$steam_script" = "/usr/bin/steam" ]; then
         echo -e "${YELLOW}Skipping /usr/bin/steam on Bazzite (read-only)${NC}"
         echo "SLSsteam injection will use PATH steam command instead."
@@ -468,27 +383,22 @@ configure_slssteam_injection() {
 
     echo "Configuring SLSsteam injection in $steam_script..."
 
-    # Backup original steam script
     if [[ ! -f "${steam_script}.bak" ]]; then
         sudo cp "$steam_script" "${steam_script}.bak"
         echo "  Backup created: ${steam_script}.bak"
     fi
 
-    # Check if already modified (SLSsteam injection present)
     if grep -q "LD_AUDIT.*SLSsteam" "$steam_script" 2>/dev/null; then
         echo "  SLSsteam injection already present. Updating..."
-        # Remove existing LD_AUDIT lines
         sudo sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_script"
     fi
 
-    # Find the last exec line and add LD_AUDIT before it
     sudo sed -i '/^exec.*steam.*"\$\@"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_script"
-
-    # Note: Desktop shortcuts are already patched by SLSsteam's setup.sh install
 
     # Enable SafeMode ONLY on Steam Deck
     if is_steam_deck; then
         echo "  Steam Deck detected - enabling SafeMode"
+        local config_file="$sls_dir/config.yaml"
         if grep -q "^SafeMode:" "$config_file" 2>/dev/null; then
             sed -i 's/^SafeMode:.*/SafeMode: yes/' "$config_file"
         else
@@ -502,169 +412,17 @@ configure_slssteam_injection() {
     echo "SLSsteam injection configured successfully."
 }
 
-# Helper function to install packages one by one, skipping unavailable ones
-install_packages_one_by_one() {
-    local packages="$1"
-    local family="$2"
-    local count=0
-    local skipped=0
-
-    for pkg in $packages; do
-        count=$((count + 1))
-
-        case "$family" in
-            fedora)
-                if sudo dnf install -y "$pkg" 2>/dev/null; then
-                    echo -e "  ${GREEN}✓${NC} $pkg"
-                else
-                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
-                    skipped=$((skipped + 1))
-                fi
-                ;;
-            debian)
-                if sudo apt-get install -y -m "$pkg" 2>/dev/null; then
-                    echo -e "  ${GREEN}✓${NC} $pkg"
-                else
-                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
-                    skipped=$((skipped + 1))
-                fi
-                ;;
-            arch)
-                if sudo pacman -Sy --noconfirm "$pkg" 2>/dev/null; then
-                    echo -e "  ${GREEN}✓${NC} $pkg"
-                else
-                    echo -e "  ${YELLOW}⊘${NC} $pkg (not found)"
-                    skipped=$((skipped + 1))
-                fi
-                ;;
-        esac
-    done
-
-    if [ $skipped -gt 0 ]; then
-        echo -e "  ${YELLOW}Skipped $skipped unavailable packages${NC}"
-    fi
-}
-
 # Main installation function
 install_slssteam() {
     echo -e "${GREEN}Installing SLSsteam...${NC}"
+    echo ""
 
-    # Variables - use dynamic directories
-    SLSSTEAM_INSTALL_DIR=$(get_sls_install_dir)
-    SLSSTEAM_CONFIG_DIR=$(get_sls_config_dir)
-    STEAM_DIR=$(get_steam_dir)
-    STEAM_LIB_DIR="$STEAM_DIR/ubuntu12_32"
-    TEMP_SLS="/tmp/slssteam.7z"
+    local SLSSTEAM_INSTALL_DIR=$(get_sls_install_dir)
+    local SLSSTEAM_CONFIG_DIR=$(get_sls_config_dir)
+    local STEAM_DIR=$(get_steam_dir)
+    local TEMP_SLS="/tmp/slssteam.7z"
 
-    # Get distro family for dependency installation
-    FAMILY=$(detect_distro_family)
-    if [ -z "$FAMILY" ]; then
-        FAMILY="debian"
-    fi
-
-    # Install SLSsteam dependencies one by one, skipping unavailable ones
-    echo "Installing SLSsteam dependencies..."
-    case "$FAMILY" in
-        bazzite)
-            # Bazzite uses rpm-ostree - dependencies should already be in the base image
-            echo "  Bazzite detected - skipping dependency installation (packages are in base image)"
-            ;;
-        fedora)
-            # 32-bit multilib: glibc, OpenSSL, curl
-            SLS_PACKAGES="glibc.i686 openssl.i686 libcurl.i686 7zip p7zip-plugins"
-            install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
-            ;;
-        debian)
-            # 32-bit multiarch (i386): glibc, OpenSSL, curl
-            SLS_PACKAGES="libc6:i386 libssl3:i386 libcurl4:i386 7zip-full"
-            install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
-            ;;
-        arch)
-            # 32-bit multilib: glibc, OpenSSL, curl
-            SLS_PACKAGES="lib32-glibc lib32-openssl lib32-curl p7zip"
-            install_packages_one_by_one "$SLS_PACKAGES" "$FAMILY"
-            ;;
-    esac
-
-    # Enable i386 architecture for Debian/Ubuntu if needed
-    if [ "$FAMILY" = "debian" ]; then
-        if ! dpkg --print-foreign-architectures 2>/dev/null | grep -q i386; then
-            echo "Enabling i386 architecture..."
-            sudo dpkg --add-architecture i386
-            sudo apt update || true
-        fi
-    fi
-
-    # Check if 7z is installed, try unzip as fallback
-    EXTRACT_CMD=""
-    EXTRACT_TYPE=""
-    if command -v 7z >/dev/null 2>&1 || command -v 7za >/dev/null 2>&1; then
-        EXTRACT_CMD="7z x"
-        EXTRACT_TYPE="7z"
-    elif command -v unzip >/dev/null 2>&1; then
-        echo -e "${YELLOW}Warning: 7z not found, using unzip as fallback${NC}"
-        EXTRACT_CMD="unzip -AA"
-        EXTRACT_TYPE="unzip"
-    elif [ "$FAMILY" = "bazzite" ]; then
-        # Bazzite: 7z should be in base image, warn and fail
-        echo -e "${YELLOW}Warning: 7z not available on Bazzite${NC}"
-        echo "SLSsteam installation will be skipped."
-        return 1
-    else
-        echo "Installing p7zip..."
-        if case "$FAMILY" in
-            fedora) sudo dnf install -y p7zip p7zip-plugins ;;
-            debian) sudo apt install -y p7zip-full ;;
-            arch)   sudo pacman -Sy --noconfirm p7zip ;;
-        esac; then
-            EXTRACT_CMD="7z x"
-            EXTRACT_TYPE="7z"
-        else
-            echo -e "${YELLOW}Warning: Could not install 7z, trying unzip...${NC}"
-            if command -v unzip >/dev/null 2>&1; then
-                EXTRACT_CMD="unzip -AA"
-                EXTRACT_TYPE="unzip"
-            else
-                echo -e "${YELLOW}Warning: Neither 7z nor unzip available${NC}"
-                echo "SLSsteam installation will be skipped."
-                return 1
-            fi
-        fi
-    fi
-
-    # Check if wget is installed, try curl as fallback
-    DOWNLOAD_CMD=""
-    if command -v wget >/dev/null 2>&1; then
-        DOWNLOAD_CMD="wget -q -O"
-    elif command -v curl >/dev/null 2>&1; then
-        echo -e "${YELLOW}Warning: wget not found, using curl as fallback${NC}"
-        DOWNLOAD_CMD="curl -sL -o"
-    elif [ "$FAMILY" = "bazzite" ]; then
-        # Bazzite: wget/curl should be in base image, warn and fail
-        echo -e "${YELLOW}Warning: Neither wget nor curl available on Bazzite${NC}"
-        echo "SLSsteam installation will be skipped."
-        return 1
-    else
-        echo "Installing wget..."
-        if case "$FAMILY" in
-            fedora) sudo dnf install -y wget ;;
-            debian) sudo apt install -y wget ;;
-            arch)   sudo pacman -Sy --noconfirm wget ;;
-        esac; then
-            DOWNLOAD_CMD="wget -q -O"
-        else
-            echo -e "${YELLOW}Warning: Could not install wget, trying curl...${NC}"
-            if command -v curl >/dev/null 2>&1; then
-                DOWNLOAD_CMD="curl -sL -o"
-            else
-                echo -e "${YELLOW}Warning: Neither wget nor curl available${NC}"
-                echo "SLSsteam installation will be skipped."
-                return 1
-            fi
-        fi
-    fi
-
-    # Check if Steam is installed (warning only, don't fail)
+    # Check if Steam is installed
     if ! STEAM_DIR=$(find_steam_directory); then
         echo -e "${YELLOW}Warning: Steam directory not found${NC}"
         echo "SLSsteam installation will be skipped."
@@ -673,7 +431,7 @@ install_slssteam() {
     fi
 
     # Check if Steam is running and close gracefully
-    STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
+    local STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
     if [ -n "$STEAM_PID" ]; then
         echo -e "${YELLOW}Steam is running. Closing gracefully...${NC}"
         close_steam
@@ -690,16 +448,14 @@ install_slssteam() {
     fi
 
     echo "Downloading SLSsteam..."
-    # Get release data from GitHub API
-    RELEASE_JSON=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
+    local RELEASE_JSON=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
 
     if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":'; then
         echo -e "${RED}Error fetching SLSsteam release info.${NC}"
         return 1
     fi
 
-    # Extract download URL using grep with more specific pattern
-    LATEST_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^\"]*SLSsteam-Any\.7z"' | \
+    local LATEST_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^\"]*SLSsteam-Any\.7z"' | \
                  sed 's/"browser_download_url": *"\([^\"]*\)"/\1/' | head -1)
 
     if [ -z "$LATEST_URL" ]; then
@@ -707,37 +463,32 @@ install_slssteam() {
         return 1
     fi
 
-    if ! $DOWNLOAD_CMD "$TEMP_SLS" "$LATEST_URL"; then
+    if ! curl -sL -o "$TEMP_SLS" "$LATEST_URL"; then
         echo -e "${RED}Error downloading SLSsteam.${NC}"
         rm -f "$TEMP_SLS"
         return 1
     fi
 
-    # Extract and install
     echo "Extracting SLSsteam..."
     rm -rf /tmp/slssteam_extract
     mkdir -p /tmp/slssteam_extract
 
-    if ! $EXTRACT_CMD "$TEMP_SLS" -o/tmp/slssteam_extract -y 2>&1 | tail -5; then
+    if ! 7z x "$TEMP_SLS" -o/tmp/slssteam_extract -y 2>&1 | tail -5; then
         echo -e "${RED}Error extracting archive.${NC}"
         rm -rf /tmp/slssteam_extract "$TEMP_SLS"
         return 1
     fi
 
-    # Find SLSsteam.so in any subdirectory
-    SLSSTEAM_SO=$(find /tmp/slssteam_extract -name "SLSsteam.so" -type f 2>/dev/null | head -1)
+    local SLSSTEAM_SO=$(find /tmp/slssteam_extract -name "SLSsteam.so" -type f 2>/dev/null | head -1)
 
     if [ -z "$SLSSTEAM_SO" ]; then
         echo -e "${RED}Error: SLSsteam.so not found in archive.${NC}"
-        echo "Archive contents:"
-        find /tmp/slssteam_extract -type f 2>/dev/null | head -20
         rm -rf /tmp/slssteam_extract "$TEMP_SLS"
         return 1
     fi
 
     echo "Found SLSsteam.so at: $SLSSTEAM_SO"
 
-    # Configure SLSsteam: ensure PlayNotOwnedGames is enabled (before cleanup)
     mkdir -p "$SLSSTEAM_CONFIG_DIR"
     if [ ! -f "$SLSSTEAM_CONFIG_DIR/config.yaml" ]; then
         if [ -f "/tmp/slssteam_extract/res/config.yaml" ]; then
@@ -745,17 +496,14 @@ install_slssteam() {
         fi
     fi
 
-    # Run SLSsteam setup.sh install (handles wrappers, desktop files, etc.)
     cd /tmp/slssteam_extract
     if [ -f "setup.sh" ]; then
         ./setup.sh install
     else
         echo "setup.sh not found, falling back to manual install..."
-        # Fallback: manual install
         cp "$SLSSTEAM_SO" "$SLSSTEAM_INSTALL_DIR/"
     fi
 
-    # Change to a safe directory before cleanup to avoid getcwd() failure
     cd ~ 2>/dev/null || cd / 2>/dev/null || true
     rm -rf /tmp/slssteam_extract "$TEMP_SLS"
 
@@ -767,19 +515,16 @@ install_slssteam() {
     echo -e "${GREEN}Patching Steam scripts...${NC}"
     configure_slssteam_injection
 
-    # Steam Deck: patch steam-jupiter for Gaming Mode
     if [ -f "/usr/bin/steam-jupiter" ]; then
         echo ""
         echo -e "${GREEN}Patching steam-jupiter for Steam Deck Gaming Mode...${NC}"
         patch_steam_jupiter
     fi
 
-    # Always patch steam.sh (used in Desktop Mode, even on Steam Deck)
     if [ -f "$HOME/.steam/steam/steam.sh" ] || [ -f "$HOME/.local/share/Steam/steam.sh" ]; then
         patch_steam_sh
     fi
 
-    # Create wrapper at /usr/local/bin/steam for Game Mode injection
     echo ""
     echo -e "${GREEN}Creating Steam wrapper...${NC}"
     create_steam_wrapper
@@ -789,8 +534,4 @@ install_slssteam() {
     echo "Just open Steam normally to play."
 }
 
-# Run installation if script is executed directly (not sourced)
-# Also run if executed via curl | bash (BASH_SOURCE[0] == "-")
-if [ -z "${BASH_SOURCE:-}" ] || [ ${#BASH_SOURCE[@]} -eq 0 ] || [[ "${BASH_SOURCE[0]:-}" == "-" ]] || [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
-    install_slssteam
-fi
+install_slssteam "$@"
