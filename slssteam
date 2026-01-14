@@ -215,6 +215,43 @@ EOF
     echo "  Wrapper created successfully"
 }
 
+# Function to patch desktop/autorun files to use bazzite-steam on Bazzite
+patch_steam_desktop() {
+    # Detect Bazzite
+    local is_bazzite=0
+    if [ -f /etc/os-release ]; then
+        source /etc/os-release
+        [ "$ID" = "bazzite" ] && is_bazzite=1
+    fi
+
+    if [ $is_bazzite -eq 0 ]; then
+        return 0
+    fi
+
+    local autostart_file="$HOME/.config/autostart/steam.desktop"
+    local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
+
+    # Patch autostart file
+    if [[ -f "$autostart_file" ]]; then
+        if grep -q "bazzite-steam" "$autostart_file" 2>/dev/null; then
+            echo "  Autostart already uses bazzite-steam"
+        else
+            echo "  Patching autostart to use bazzite-steam..."
+            sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=bazzite-steam|g' "$autostart_file"
+        fi
+    fi
+
+    # Patch desktop shortcut if it exists
+    if [[ -f "$desktop_shortcut" ]]; then
+        if grep -q "bazzite-steam" "$desktop_shortcut" 2>/dev/null; then
+            echo "  Desktop shortcut already uses bazzite-steam"
+        else
+            echo "  Patching desktop shortcut to use bazzite-steam..."
+            sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=bazzite-steam|g' "$desktop_shortcut"
+        fi
+    fi
+}
+
 # Function to patch steam-jupiter for Steam Deck Gaming Mode
 patch_steam_jupiter() {
     local steam_jupiter="/usr/bin/steam-jupiter"
@@ -543,6 +580,10 @@ install_slssteam() {
     echo ""
     echo -e "${GREEN}Creating Steam wrapper...${NC}"
     create_steam_wrapper
+
+    echo ""
+    echo -e "${GREEN}Patching desktop/autorun files...${NC}"
+    patch_steam_desktop
 
     echo ""
     echo "SLSsteam installed and configured successfully!"
