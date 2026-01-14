@@ -162,14 +162,9 @@ uninstall_slssteam_injection() {
 
     # Restore autostart to use system steam
     if [[ -f "$autostart_file" ]]; then
-        # Replace any Exec line pointing to steam with appropriate path
-        if [ $is_bazzite -eq 1 ]; then
-            sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=bazzite-steam|g' "$autostart_file"
-            echo "  Restored autostart entry (bazzite-steam)."
-        else
-            sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=/usr/bin/steam|g' "$autostart_file"
-            echo "  Restored autostart entry."
-        fi
+        # Replace any Exec line pointing to steam with system path
+        sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=/usr/bin/steam|g' "$autostart_file"
+        echo "  Restored autostart entry."
     fi
 
     # Also clean up any SLSsteam wrapper if it exists
