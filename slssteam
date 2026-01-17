@@ -283,11 +283,14 @@ patch_steam_jupiter() {
         return 0
     fi
 
-    # Skip if /usr is read-only (Steam Deck, Bazzite, etc.)
-    if ! touch "$steam_jupiter.test_write" 2>/dev/null; then
+    # Skip read-only check on Steam Deck (jupiter is writable via btrfs rollback)
+    if ! is_steam_deck; then
+        if ! touch "$steam_jupiter.test_write" 2>/dev/null; then
+            rm -f "$steam_jupiter.test_write" 2>/dev/null || true
+            echo "  Skipping steam-jupiter patch (read-only filesystem)"
+            return 0
+        fi
         rm -f "$steam_jupiter.test_write" 2>/dev/null || true
-        echo "  Skipping steam-jupiter patch (read-only filesystem)"
-        return 0
     fi
 
     ld_audit=$(get_ld_audit)
@@ -579,10 +582,15 @@ install_slssteam() {
     echo -e "${GREEN}Patching Steam scripts...${NC}"
     configure_slssteam_injection
 
-    if [ -f "/usr/bin/steam-jupiter" ]; then
-        echo ""
-        echo -e "${GREEN}Patching steam-jupiter for Steam Deck Gaming Mode...${NC}"
-        patch_steam_jupiter
+    # Steam Deck detected - always patch steam-jupiter for Gaming Mode
+    if is_steam_deck; then
+        if [ -f "/usr/bin/steam-jupiter" ]; then
+            echo ""
+            echo -e "${GREEN}Patching steam-jupiter for Steam Deck Gaming Mode...${NC}"
+            patch_steam_jupiter
+        else
+            echo -e "${YELLOW}Warning: steam-jupiter not found at /usr/bin/steam-jupiter${NC}"
+        fi
     fi
 
     if [ -f "$HOME/.steam/steam/steam.sh" ] || [ -f "$HOME/.local/share/Steam/steam.sh" ]; then
