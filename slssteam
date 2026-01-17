@@ -4,6 +4,10 @@ set -euo pipefail
 # SLSsteam Installation Script
 # Part of Enter The Wired project
 
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
 # Colors (disabled if not interactive terminal)
 if [ -t 1 ] && [ -t 0 ]; then
     GREEN='\033[0;32m'
@@ -11,95 +15,25 @@ if [ -t 1 ] && [ -t 0 ]; then
     YELLOW='\033[1;33m'
     NC='\033[0m'
 else
-    GREEN=''
-    RED=''
-    YELLOW=''
-    NC=''
+    GREEN='' RED='' YELLOW='' NC=''
 fi
 
-# Legacy variables for backward compatibility
-STEAM_DIR="$HOME/.steam/steam"
-REPO_SLS_LOCATION="/usr/lib32"
+# =============================================================================
+# SYSTEM DETECTION
+# =============================================================================
 
-# Function to find Steam executable
-find_steam_executable() {
-    # Detect Bazzite early to skip /usr/bin/steam
-    local is_bazzite=0
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-        [ "$ID" = "bazzite" ] && is_bazzite=1
-    fi
-
-    # 1. Use standard Steam path (skip on Bazzite)
-    if [ $is_bazzite -eq 0 ] && [ -f "/usr/bin/steam" ]; then
-        echo "/usr/bin/steam"
-        return 0
-    fi
-
-    # 2. Check PATH for steam command (skip /usr/bin/steam on Bazzite)
-    if command -v steam &>/dev/null; then
-        local steam_path
-        steam_path=$(command -v steam)
-        if [ $is_bazzite -eq 0 ] || [ "$steam_path" != "/usr/bin/steam" ]; then
-            echo "$steam_path"
-            return 0
-        fi
-    fi
-
-    # 3. Check alternative paths (skip on Bazzite)
-    for path in /usr/local/bin/steam "$HOME/.local/bin/steam"; do
-        if [ -f "$path" ] && [ -x "$path" ]; then
-            echo "$path"
-            return 0
-        fi
-    done
-
-    # 4. Fallback to /usr/bin/steam on Bazzite (read-only but exists)
-    if [ $is_bazzite -eq 1 ] && [ -f "/usr/bin/steam" ] && [ -x "/usr/bin/steam" ]; then
-        echo "/usr/bin/steam"
-        return 0
-    fi
-
-    return 1
+is_bazzite() {
+    [ -f /etc/os-release ] && source /etc/os-release && [ "${ID:-}" = "bazzite" ]
 }
 
-# Function to find Steam directory
-find_steam_directory() {
-    # Common Steam installation paths (in order of preference)
-    local steam_paths=(
-        "$HOME/.steam/steam"                    # Modern Steam
-        "$HOME/.local/share/Steam"              # Traditional location
-        "/opt/steam/steam"                      # Custom /opt
-        "/usr/local/steam"                      # Custom /usr/local
-    )
-
-    for path in "${steam_paths[@]}"; do
-        if [ -d "$path" ] && [ -f "$path/steam.sh" ]; then
-            echo "$path"
-            return 0
-        fi
-    done
-
-    # Fallback: check for any directory with steam.sh
-    for path in "${steam_paths[@]}"; do
-        if [ -d "$path" ]; then
-            echo "$path"
-            return 0
-        fi
-    done
-
-    return 1
+is_steam_deck() {
+    [ -f /etc/os-release ] && source /etc/os-release
+    [[ "${ID:-}" == "steamos" ]] || [[ "${VARIANT_ID:-}" == "steamdeck" ]]
 }
 
-# Function to detect Steam installation type (legacy, use find_steam_* instead)
-get_steam_dir() {
-    local dir
-    if dir=$(find_steam_directory); then
-        echo "$dir"
-    else
-        echo "$STEAM_DIR"
-    fi
-}
+# =============================================================================
+# STEAM DETECTION
+# =============================================================================
 
 get_sls_install_dir() {
     echo "$HOME/.local/share/SLSsteam"
@@ -109,55 +43,81 @@ get_sls_config_dir() {
     echo "$HOME/.config/SLSsteam"
 }
 
-# Function to detect Steam Deck (SteamOS)
-is_steam_deck() {
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
+find_steam_directory() {
+    local steam_paths=(
+        "$HOME/.steam/steam"
+        "$HOME/.local/share/Steam"
+        "/opt/steam/steam"
+        "/usr/local/steam"
+    )
+
+    for path in "${steam_paths[@]}"; do
+        if [ -d "$path" ] && [ -f "$path/steam.sh" ]; then
+            echo "$path"
+            return 0
+        fi
+    done
+
+    for path in "${steam_paths[@]}"; do
+        [ -d "$path" ] && echo "$path" && return 0
+    done
+
+    return 1
+}
+
+find_steam_executable() {
+    # Bazzite/Steam Deck: skip /usr/bin/steam (read-only)
+    if ! is_bazzite && ! is_steam_deck && [ -f "/usr/bin/steam" ]; then
+        echo "/usr/bin/steam"
+        return 0
     fi
 
-    if [[ "$ID" == "steamos" ]] || [[ "${VARIANT_ID:-}" == "steamdeck" ]]; then
+    if command -v steam &>/dev/null; then
+        local steam_path
+        steam_path=$(command -v steam)
+        # On Bazzite/Steam Deck, prefer wrapper over /usr/bin/steam
+        if ! is_bazzite && ! is_steam_deck; then
+            echo "$steam_path"
+            return 0
+        elif [ "$steam_path" != "/usr/bin/steam" ]; then
+            echo "$steam_path"
+            return 0
+        fi
+    fi
+
+    for path in /usr/local/bin/steam "$HOME/.local/bin/steam"; do
+        [ -f "$path" ] && [ -x "$path" ] && echo "$path" && return 0
+    done
+
+    # Fallback for Bazzite/Steam Deck
+    if [ -f "/usr/bin/steam" ] && [ -x "/usr/bin/steam" ]; then
+        echo "/usr/bin/steam"
         return 0
     fi
 
     return 1
 }
 
-# Function to run Steam with SLSsteam injection
-run_steam_with_sls() {
-    local steam_exe
-    local ld_audit
+# =============================================================================
+# STEAM MANAGEMENT
+# =============================================================================
 
-    if ! steam_exe=$(find_steam_executable); then
-        echo "  Warning: Steam executable not found, cannot run Steam"
-        return 1
-    fi
-
-    ld_audit=$(get_ld_audit)
-    LD_AUDIT="$ld_audit" $steam_exe "$@"
-}
-
-# Function to close Steam gracefully via steam://exit
 close_steam_graceful() {
     local steam_exe
-
-    if ! steam_exe=$(find_steam_executable 2>/dev/null); then
+    steam_exe=$(find_steam_executable 2>/dev/null) || {
         echo "  Warning: Steam executable not found"
         return 1
-    fi
+    }
 
     echo "  Closing Steam gracefully via steam://exit..."
-    $steam_exe steam://exit 2>/dev/null || true
-    return 0
+    timeout 10 $steam_exe -clearbeta steam://exit 2>/dev/null || true
 }
 
-# Function to close Steam (tries graceful first, then kill)
 close_steam() {
     local steam_pids
 
-    # Try graceful close first
     if close_steam_graceful; then
         sleep 3
-
         steam_pids=$(pgrep -x "steam" 2>/dev/null || true)
         if [ -z "$steam_pids" ]; then
             echo "  Steam closed gracefully"
@@ -177,123 +137,43 @@ close_steam() {
     [ -z "$steam_pids" ]
 }
 
-# Function to create wrapper at /usr/local/bin/steam
-create_steam_wrapper() {
-    local ld_audit
-    ld_audit=$(get_ld_audit)
+run_steam_with_sls() {
+    local steam_exe
 
-    # Detect Bazzite
-    local is_bazzite=0
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-        [ "$ID" = "bazzite" ] && is_bazzite=1
-    fi
+    steam_exe=$(find_steam_executable) || {
+        echo "  Warning: Steam executable not found, cannot run Steam"
+        return 1
+    }
 
-    if [ ! -d "/usr/local/bin" ]; then
-        echo "  Creating /usr/local/bin directory..."
-        sudo mkdir -p /usr/local/bin
-    fi
-
-    if [ $is_bazzite -eq 1 ]; then
-        # Bazzite: create TWO wrappers (one for Game Mode, one for Desktop Mode)
-        echo "  Creating steam wrapper for Game Mode..."
-        sudo tee "/usr/local/bin/steam" > /dev/null << EOF
-#!/usr/bin/env bash
-export LD_AUDIT="$ld_audit"
-exec /usr/bin/steam "\$@"
-EOF
-        sudo chmod +x "/usr/local/bin/steam"
-        echo "  Wrapper created: /usr/local/bin/steam"
-
-        echo "  Creating bazzite-steam wrapper for Desktop Mode..."
-        sudo tee "/usr/local/bin/bazzite-steam" > /dev/null << EOF
-#!/usr/bin/env bash
-export LD_AUDIT="$ld_audit"
-exec /usr/bin/bazzite-steam "\$@"
-EOF
-        sudo chmod +x "/usr/local/bin/bazzite-steam"
-        echo "  Wrapper created: /usr/local/bin/bazzite-steam"
-    else
-        # Other distros: create single wrapper
-        echo "  Creating Steam wrapper..."
-        sudo tee "/usr/local/bin/steam" > /dev/null << EOF
-#!/usr/bin/env bash
-export LD_AUDIT="$ld_audit"
-exec steam "\$@"
-EOF
-        sudo chmod +x "/usr/local/bin/steam"
-        echo "  Wrapper created: /usr/local/bin/steam"
-    fi
+    LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so $steam_exe "$@"
 }
 
-# Function to patch desktop/autorun files to use bazzite-steam on Bazzite
-patch_steam_desktop() {
-    # Detect Bazzite
-    local is_bazzite=0
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-        [ "$ID" = "bazzite" ] && is_bazzite=1
+# =============================================================================
+# PATCHING
+# =============================================================================
+
+patch_steam_sh() {
+    local steam_sh="$HOME/.steam/steam/steam.sh"
+    [ -f "$steam_sh" ] || steam_sh="$HOME/.local/share/Steam/steam.sh"
+    [ -f "$steam_sh" ] || return 0
+
+    if grep -q "LD_AUDIT.*SLSsteam" "$steam_sh" 2>/dev/null; then
+        echo "  steam.sh already patched, updating..."
+        sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_sh"
     fi
 
-    if [ $is_bazzite -eq 0 ]; then
-        return 0
-    fi
-
-    local autostart_file="$HOME/.config/autostart/steam.desktop"
-    local system_autostart="/etc/xdg/autostart/steam.desktop"
-    local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
-
-    # Copy autostart from system if it doesn't exist
-    if [[ ! -f "$autostart_file" ]]; then
-        if [[ -f "$system_autostart" ]]; then
-            echo "  Copying autostart file from $system_autostart..."
-            mkdir -p "$HOME/.config/autostart"
-            cp "$system_autostart" "$autostart_file"
-        fi
-    fi
-
-    # Patch autostart file
-    if [[ -f "$autostart_file" ]]; then
-        if grep -q "Exec=bazzite-steam" "$autostart_file" 2>/dev/null; then
-            echo "  Autostart already uses bazzite-steam"
-        else
-            echo "  Patching autostart to use bazzite-steam..."
-            sed -i 's|Exec=/usr/bin/bazzite-steam[^ ]*|Exec=bazzite-steam|g' "$autostart_file"
-        fi
-    fi
-
-    # Patch desktop shortcut if it exists
-    if [[ -f "$desktop_shortcut" ]]; then
-        if grep -q "Exec=bazzite-steam" "$desktop_shortcut" 2>/dev/null; then
-            echo "  Desktop shortcut already uses bazzite-steam"
-        else
-            echo "  Patching desktop shortcut to use bazzite-steam..."
-            sed -i 's|Exec=/usr/bin/bazzite-steam[^ ]*|Exec=bazzite-steam|g' "$desktop_shortcut"
-        fi
-    fi
+    sed -i '10a export LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so' "$steam_sh"
+    echo "  Patched steam.sh at $steam_sh"
 }
 
-# Function to patch steam-jupiter for Steam Deck Gaming Mode
+# Steam Deck only: patch steam-jupiter for Gaming Mode
 patch_steam_jupiter() {
-    local steam_jupiter="/usr/bin/steam-jupiter"
-    local ld_audit
+    local -r steam_jupiter="/usr/bin/steam-jupiter"
 
-    if [ ! -f "$steam_jupiter" ]; then
-        echo "  steam-jupiter not found at $steam_jupiter (not a Steam Deck)"
-        return 0
-    fi
-
-    # Skip read-only check on Steam Deck (jupiter is writable via btrfs rollback)
-    if ! is_steam_deck; then
-        if ! touch "$steam_jupiter.test_write" 2>/dev/null; then
-            rm -f "$steam_jupiter.test_write" 2>/dev/null || true
-            echo "  Skipping steam-jupiter patch (read-only filesystem)"
-            return 0
-        fi
-        rm -f "$steam_jupiter.test_write" 2>/dev/null || true
-    fi
-
-    ld_audit=$(get_ld_audit)
+    [ -f "$steam_jupiter" ] || {
+        echo "  steam-jupiter not found"
+        return 1
+    }
 
     echo "  Patching steam-jupiter at $steam_jupiter..."
 
@@ -308,78 +188,206 @@ patch_steam_jupiter() {
     fi
 
     if grep -q 'exec /usr/lib/steam/steam -steamdeck' "$steam_jupiter" 2>/dev/null; then
-        sudo sed -i '/^exec \/usr\/lib\/steam\/steam -steamdeck/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter"
+        sudo sed -i '/^exec \/usr\/lib\/steam\/steam -steamdeck/i export LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so' "$steam_jupiter"
         echo "  Patched steam-jupiter with LD_AUDIT"
     else
-        sudo sed -i '/^exec.*steam.*"-steamdeck"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter" 2>/dev/null || \
-        sudo sed -i '/^exec.*steam/i export LD_AUDIT="'"$ld_audit"'"' "$steam_jupiter" 2>/dev/null || true
+        sudo sed -i '/^exec.*steam.*"-steamdeck"/i export LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so' "$steam_jupiter" 2>/dev/null || \
+        sudo sed -i '/^exec.*steam/i export LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so' "$steam_jupiter" 2>/dev/null || true
         echo "  Applied fallback patch to steam-jupiter"
     fi
 }
 
-# Function to patch steam.sh with LD_AUDIT
-patch_steam_sh() {
-    local steam_dir
-    steam_dir=$(get_steam_dir)
-    local steam_sh="$steam_dir/steam.sh"
-    local ld_audit
+# Bazzite only: patch desktop files to use wrapper
+patch_steam_desktop() {
+    local autostart_file="$HOME/.config/autostart/steam.desktop"
+    local system_autostart="/etc/xdg/autostart/steam.desktop"
+    local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
 
-    if [ ! -f "$steam_sh" ]; then
-        echo "  steam.sh not found at $steam_sh"
+    # Copy autostart from system if it doesn't exist
+    if [[ ! -f "$autostart_file" ]] && [[ -f "$system_autostart" ]]; then
+        echo "  Copying autostart file from $system_autostart..."
+        mkdir -p "$HOME/.config/autostart"
+        cp "$system_autostart" "$autostart_file"
+    fi
+
+    # Patch autostart
+    if [[ -f "$autostart_file" ]]; then
+        if grep -q "Exec=bazzite-steam" "$autostart_file" 2>/dev/null; then
+            echo "  Autostart already uses bazzite-steam"
+        else
+            echo "  Patching autostart to use bazzite-steam..."
+            sed -i 's|Exec=/usr/bin/bazzite-steam[^ ]*|Exec=bazzite-steam|g' "$autostart_file"
+        fi
+    fi
+
+    # Patch desktop shortcut
+    if [[ -f "$desktop_shortcut" ]]; then
+        if grep -q "Exec=bazzite-steam" "$desktop_shortcut" 2>/dev/null; then
+            echo "  Desktop shortcut already uses bazzite-steam"
+        else
+            echo "  Patching desktop shortcut to use bazzite-steam..."
+            sed -i 's|Exec=/usr/bin/bazzite-steam[^ ]*|Exec=bazzite-steam|g' "$desktop_shortcut"
+        fi
+    fi
+}
+
+# =============================================================================
+# CLEANUP
+# =============================================================================
+
+cleanup_ld_audit() {
+    echo "Cleaning up existing LD_AUDIT patches..."
+
+    # Clean steam.sh
+    for steam_sh in "$HOME/.steam/steam/steam.sh" "$HOME/.local/share/Steam/steam.sh"; do
+        if [ -f "$steam_sh" ]; then
+            if grep -q "LD_AUDIT.*SLSsteam" "$steam_sh" 2>/dev/null; then
+                sed -i '/export LD_AUDIT.*SLSsteam/d' "$steam_sh"
+                echo "  Cleaned: $steam_sh"
+            fi
+        fi
+    done
+
+    # Clean steam-jupiter (Steam Deck)
+    local steam_jupiter="/usr/bin/steam-jupiter"
+    if [ -f "$steam_jupiter" ]; then
+        if grep -q "LD_AUDIT.*SLSsteam" "$steam_jupiter" 2>/dev/null; then
+            sudo sed -i '/export LD_AUDIT.*SLSsteam/d' "$steam_jupiter"
+            echo "  Cleaned: $steam_jupiter"
+        fi
+    fi
+
+    # Remove wrappers
+    for wrapper in "/usr/local/bin/steam" "/usr/local/bin/bazzite-steam"; do
+        if [ -f "$wrapper" ]; then
+            sudo rm -f "$wrapper"
+            echo "  Removed: $wrapper"
+        fi
+    done
+
+    # Remove backups
+    if [ -f "/usr/bin/steam-jupiter.bak" ]; then
+        sudo rm -f "/usr/bin/steam-jupiter.bak"
+        echo "  Removed backup: /usr/bin/steam-jupiter.bak"
+    fi
+
+    echo "Cleanup complete!"
+}
+
+# =============================================================================
+# WRAPPERS (Bazzite only)
+# =============================================================================
+
+create_steam_wrapper() {
+    if [ ! -d "/usr/local/bin" ]; then
+        echo "  Creating /usr/local/bin directory..."
+        sudo mkdir -p /usr/local/bin
+    fi
+
+    # Game Mode wrapper
+    echo "  Creating steam wrapper for Game Mode..."
+    sudo tee "/usr/local/bin/steam" > /dev/null << EOF
+#!/usr/bin/env bash
+export LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so
+exec /usr/bin/steam "\$@"
+EOF
+    sudo chmod +x "/usr/local/bin/steam"
+    echo "  Wrapper created: /usr/local/bin/steam"
+
+    # Desktop Mode wrapper
+    echo "  Creating bazzite-steam wrapper for Desktop Mode..."
+    sudo tee "/usr/local/bin/bazzite-steam" > /dev/null << EOF
+#!/usr/bin/env bash
+export LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so
+exec /usr/bin/bazzite-steam "\$@"
+EOF
+    sudo chmod +x "/usr/local/bin/bazzite-steam"
+    echo "  Wrapper created: /usr/local/bin/bazzite-steam"
+}
+
+# =============================================================================
+# INJECTION CONFIGURATION
+# =============================================================================
+
+configure_slssteam_injection() {
+    local sls_dir
+    sls_dir=$(get_sls_install_dir)
+
+    # Steam Deck: patch steam-jupiter, enable SafeMode
+    if is_steam_deck; then
+        echo "  Steam Deck detected"
+
+        if [ -f "/usr/bin/steam-jupiter" ]; then
+            echo ""
+            echo -e "${GREEN}Patching steam-jupiter for Gaming Mode...${NC}"
+            patch_steam_jupiter
+        else
+            echo -e "${YELLOW}Warning: steam-jupiter not found${NC}"
+        fi
+
+        # Enable SafeMode on Steam Deck
+        local config_file="$sls_dir/config.yaml"
+        if [ -f "$config_file" ]; then
+            if grep -q "^SafeMode:" "$config_file" 2>/dev/null; then
+                sed -i 's/^SafeMode:.*/SafeMode: yes/' "$config_file"
+            else
+                echo "SafeMode: yes" >> "$config_file"
+            fi
+            echo "  SafeMode enabled"
+        fi
         return 0
     fi
 
-    ld_audit=$(get_ld_audit)
-
-    if grep -q "LD_AUDIT.*SLSsteam" "$steam_sh" 2>/dev/null; then
-        echo "  steam.sh already patched, updating..."
-        sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_sh"
+    # Bazzite: create wrappers at /usr/local/bin
+    if is_bazzite; then
+        echo "  Bazzite detected"
+        echo ""
+        echo -e "${GREEN}Creating Steam wrappers...${NC}"
+        create_steam_wrapper
+        echo ""
+        echo -e "${GREEN}Patching desktop/autorun files...${NC}"
+        patch_steam_desktop
+        return 0
     fi
 
-    sed -i '10a export LD_AUDIT="'"$ld_audit"'"' "$steam_sh"
-    echo "  Patched steam.sh at $steam_sh"
+    # Standard Linux: nothing to do (setup.sh already ran during install)
+    return 0
 }
 
-# Function to finalize Steam after installation
+# =============================================================================
+# FINALIZATION
+# =============================================================================
+
 finalize_steam() {
-    local steam_dir
-    steam_dir=$(get_steam_dir)
-    local steam_cfg="$steam_dir/steam.cfg"
-    local steam_jupiter="/usr/bin/steam-jupiter"
+    local steam_dir steam_cfg
+    steam_dir=$(find_steam_directory) || steam_dir="$HOME/.steam/steam"
+    steam_cfg="$steam_dir/steam.cfg"
 
     echo "Finalizing Steam configuration..."
 
-    if [ -f "$steam_cfg" ]; then
-        rm -f "$steam_cfg"
-        echo "  Removed steam.cfg"
-    fi
+    [ -f "$steam_cfg" ] && rm -f "$steam_cfg" && echo "  Removed steam.cfg"
 
     if close_steam_graceful; then
         echo "  Steam will close and update via steam://exit"
+    elif is_steam_deck; then
+        echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
     else
-        if [ -f "$steam_jupiter" ]; then
-            echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
-        else
-            echo "  Steam not found, opening to check for updates..."
-            if command -v steam &>/dev/null; then
-                run_steam_with_sls &
-                RUN_STEAM_PID=$!
-                sleep 5
+        echo "  Steam not found, opening to check for updates..."
+        if command -v steam &>/dev/null; then
+            run_steam_with_sls &
+            local run_steam_pid=$!
+            sleep 5
 
-                local attempts=0
-                while [ $attempts -lt 12 ]; do
-                    if pgrep -x "steam" &>/dev/null; then
-                        break
-                    fi
-                    sleep 1
-                    attempts=$((attempts + 1))
-                done
+            local attempts=0
+            while [ $attempts -lt 12 ]; do
+                pgrep -x "steam" &>/dev/null && break
+                sleep 1
+                attempts=$((attempts + 1))
+            done
 
-                sleep 30
-
-                close_steam
-                kill $RUN_STEAM_PID 2>/dev/null || true
-            fi
+            sleep 30
+            close_steam
+            kill $run_steam_pid 2>/dev/null || true
         fi
     fi
 
@@ -388,222 +396,128 @@ BootStrapperInhibitAll=enable
 BootStrapperForceSelfUpdate=disable
 EOF
     echo "  Created steam.cfg"
-    echo "Status: Patched"
 }
 
-# Function to get LD_AUDIT string from SLSsteam files
-get_ld_audit() {
-    local inject so_file sls_dir
+# =============================================================================
+# MAIN INSTALLATION
+# =============================================================================
 
-    inject=$(find "$REPO_SLS_LOCATION" -name "*library-inject*.so" -type f 2>/dev/null | head -1)
-    so_file=$(find "$REPO_SLS_LOCATION" -name "*SLSsteam.so" ! -name "*library-inject*" -type f 2>/dev/null | head -1)
-
-    if [ -n "$inject" ] && [ -n "$so_file" ]; then
-        echo "$inject:$so_file"
-        return 0
-    fi
-
-    sls_dir=$(get_sls_install_dir)
-    echo "$sls_dir/library-inject.so:$sls_dir/SLSsteam.so"
-}
-
-# Function to check if SLSsteam is installed in repo
-is_repo_install() {
-    [ -f "$REPO_SLS_LOCATION/libSLSsteam.so" ] || \
-    [ -f "$REPO_SLS_LOCATION/SLSsteam.so" ] || \
-    [ -f "$REPO_SLS_LOCATION/libSLS-library-inject.so" ] || \
-    [ -f "$REPO_SLS_LOCATION/library-inject.so" ]
-}
-
-# Function to configure SLSsteam injection
-configure_slssteam_injection() {
-    local sls_dir
-    sls_dir=$(get_sls_install_dir)
-    local steam_script
-    local ld_audit
-
-    if is_repo_install; then
-        echo "  Repo install detected"
-        ld_audit=$(get_ld_audit)
-    elif [[ ! -d "$sls_dir" ]]; then
-        echo "Warn: SLSsteam directory not found"
-        return 1
-    else
-        echo "  Found: $sls_dir/library-inject.so"
-        echo "  Found: $sls_dir/SLSsteam.so"
-        ld_audit=$(get_ld_audit)
-    fi
-
-    if ! steam_script=$(find_steam_executable 2>/dev/null); then
-        echo -e "${YELLOW}Warning: Steam executable not found${NC}"
-        echo "SLSsteam injection will be skipped. Re-run after installing Steam."
-        return 0
-    fi
-
-    # Skip if /usr/bin is read-only (Steam Deck, Bazzite, etc.)
-    if [ "$steam_script" = "/usr/bin/steam" ] && ! touch "$steam_script.test_write" 2>/dev/null; then
-        rm -f "$steam_script.test_write" 2>/dev/null || true
-        echo -e "${YELLOW}Skipping /usr/bin/steam (read-only filesystem)${NC}"
-        echo "SLSsteam injection will use wrapper at /usr/local/bin/steam"
-        return 0
-    fi
-
-    echo "Configuring SLSsteam injection in $steam_script..."
-
-    if [[ ! -f "${steam_script}.bak" ]]; then
-        sudo cp "$steam_script" "${steam_script}.bak"
-        echo "  Backup created: ${steam_script}.bak"
-    fi
-
-    if grep -q "LD_AUDIT.*SLSsteam" "$steam_script" 2>/dev/null; then
-        echo "  SLSsteam injection already present. Updating..."
-        sudo sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_script"
-    fi
-
-    sudo sed -i '/^exec.*steam.*"\$\@"/i export LD_AUDIT="'"$ld_audit"'"' "$steam_script"
-
-    # Enable SafeMode ONLY on Steam Deck
-    if is_steam_deck; then
-        echo "  Steam Deck detected - enabling SafeMode"
-        local config_file="$sls_dir/config.yaml"
-        if grep -q "^SafeMode:" "$config_file" 2>/dev/null; then
-            sed -i 's/^SafeMode:.*/SafeMode: yes/' "$config_file"
-        else
-            echo "SafeMode: yes" >> "$config_file"
-        fi
-        echo "  SafeMode enabled"
-    else
-        echo "  Non-Steam Deck system - SafeMode not enabled"
-    fi
-
-    echo "SLSsteam injection configured successfully."
-}
-
-# Main installation function
 install_slssteam() {
     echo -e "${GREEN}Installing SLSsteam...${NC}"
     echo ""
 
-    local SLSSTEAM_INSTALL_DIR=$(get_sls_install_dir)
-    local SLSSTEAM_CONFIG_DIR=$(get_sls_config_dir)
-    local STEAM_DIR=$(get_steam_dir)
-    local TEMP_SLS="/tmp/slssteam.7z"
+    # Clean up any existing LD_AUDIT patches before installing
+    cleanup_ld_audit
+
+    local slssteam_install_dir slssteam_config_dir steam_dir
+    slssteam_install_dir=$(get_sls_install_dir)
+    slssteam_config_dir=$(get_sls_config_dir)
 
     # Check if Steam is installed
-    if ! STEAM_DIR=$(find_steam_directory); then
+    steam_dir=$(find_steam_directory) || {
         echo -e "${YELLOW}Warning: Steam directory not found${NC}"
         echo "SLSsteam installation will be skipped."
         echo "Install Steam and re-run this script to enable SLSsteam."
         return 0
-    fi
+    }
 
-    # Check if Steam is running and close gracefully
-    local STEAM_PID=$(pgrep -x "steam" 2>/dev/null || true)
-    if [ -n "$STEAM_PID" ]; then
+    # Close Steam if running
+    local steam_pid
+    steam_pid=$(pgrep -x "steam" 2>/dev/null || true)
+    if [ -n "$steam_pid" ]; then
         echo -e "${YELLOW}Steam is running. Closing gracefully...${NC}"
         close_steam
     fi
 
     # Create directories
-    mkdir -p "$SLSSTEAM_INSTALL_DIR"
-    mkdir -p "$SLSSTEAM_CONFIG_DIR"
+    mkdir -p "$slssteam_install_dir" "$slssteam_config_dir"
 
     # Backup existing config
-    if [ -f "$SLSSTEAM_CONFIG_DIR/config.yaml" ]; then
-        cp "$SLSSTEAM_CONFIG_DIR/config.yaml" "$SLSSTEAM_CONFIG_DIR/config.yaml.bak"
+    if [ -f "$slssteam_config_dir/config.yaml" ]; then
+        cp "$slssteam_config_dir/config.yaml" "$slssteam_config_dir/config.yaml.bak"
         echo "Config backup created."
     fi
 
+    # Download
     echo "Downloading SLSsteam..."
-    local RELEASE_JSON=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
+    local release_json temp_sls="/tmp/slssteam.7z"
+    release_json=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
 
-    if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":'; then
+    if [ -z "$release_json" ] || echo "$release_json" | grep -q '"message":'; then
         echo -e "${RED}Error fetching SLSsteam release info.${NC}"
         return 1
     fi
 
-    local LATEST_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^\"]*SLSsteam-Any\.7z"' | \
+    local latest_url
+    latest_url=$(echo "$release_json" | grep -o '"browser_download_url": *"[^\"]*SLSsteam-Any\.7z"' | \
                  sed 's/"browser_download_url": *"\([^\"]*\)"/\1/' | head -1)
 
-    if [ -z "$LATEST_URL" ]; then
+    if [ -z "$latest_url" ]; then
         echo -e "${RED}Error: Could not find SLSsteam-Any.7z in release assets.${NC}"
         return 1
     fi
 
-    if ! curl -sL -o "$TEMP_SLS" "$LATEST_URL"; then
+    if ! curl -sL -o "$temp_sls" "$latest_url"; then
         echo -e "${RED}Error downloading SLSsteam.${NC}"
-        rm -f "$TEMP_SLS"
+        rm -f "$temp_sls"
         return 1
     fi
 
+    # Extraction
     echo "Extracting SLSsteam..."
     rm -rf /tmp/slssteam_extract
     mkdir -p /tmp/slssteam_extract
 
-    if ! 7z x "$TEMP_SLS" -o/tmp/slssteam_extract -y 2>&1 | tail -5; then
+    if ! 7z x "$temp_sls" -o/tmp/slssteam_extract -y 2>&1 | tail -5; then
         echo -e "${RED}Error extracting archive.${NC}"
-        rm -rf /tmp/slssteam_extract "$TEMP_SLS"
+        rm -rf /tmp/slssteam_extract "$temp_sls"
         return 1
     fi
 
-    local SLSSTEAM_SO=$(find /tmp/slssteam_extract -name "SLSsteam.so" -type f 2>/dev/null | head -1)
+    local slssteam_so
+    slssteam_so=$(find /tmp/slssteam_extract -name "SLSsteam.so" -type f 2>/dev/null | head -1)
 
-    if [ -z "$SLSSTEAM_SO" ]; then
+    if [ -z "$slssteam_so" ]; then
         echo -e "${RED}Error: SLSsteam.so not found in archive.${NC}"
-        rm -rf /tmp/slssteam_extract "$TEMP_SLS"
+        rm -rf /tmp/slssteam_extract "$temp_sls"
         return 1
     fi
 
-    echo "Found SLSsteam.so at: $SLSSTEAM_SO"
+    echo "Found SLSsteam.so at: $slssteam_so"
 
-    mkdir -p "$SLSSTEAM_CONFIG_DIR"
-    if [ ! -f "$SLSSTEAM_CONFIG_DIR/config.yaml" ]; then
-        if [ -f "/tmp/slssteam_extract/res/config.yaml" ]; then
-            cp /tmp/slssteam_extract/res/config.yaml "$SLSSTEAM_CONFIG_DIR/config.yaml"
-        fi
+    # Copy config if it doesn't exist
+    if [ ! -f "$slssteam_config_dir/config.yaml" ] && [ -f "/tmp/slssteam_extract/res/config.yaml" ]; then
+        cp /tmp/slssteam_extract/res/config.yaml "$slssteam_config_dir/config.yaml"
     fi
 
+    # Installation
     cd /tmp/slssteam_extract
     if [ -f "setup.sh" ]; then
         ./setup.sh install
     else
         echo "setup.sh not found, falling back to manual install..."
-        cp "$SLSSTEAM_SO" "$SLSSTEAM_INSTALL_DIR/"
+        cp "$slssteam_so" "$slssteam_install_dir/"
     fi
 
     cd ~ 2>/dev/null || cd / 2>/dev/null || true
-    rm -rf /tmp/slssteam_extract "$TEMP_SLS"
+    rm -rf /tmp/slssteam_extract "$temp_sls"
 
+    # Finalization
     echo ""
     echo -e "${GREEN}Finalizing Steam configuration...${NC}"
     finalize_steam
 
+    # Configure injection based on system type
     echo ""
-    echo -e "${GREEN}Patching Steam scripts...${NC}"
+    echo -e "${GREEN}Configuring SLSsteam injection...${NC}"
     configure_slssteam_injection
 
-    # Steam Deck detected - always patch steam-jupiter for Gaming Mode
-    if is_steam_deck; then
-        if [ -f "/usr/bin/steam-jupiter" ]; then
-            echo ""
-            echo -e "${GREEN}Patching steam-jupiter for Steam Deck Gaming Mode...${NC}"
-            patch_steam_jupiter
-        else
-            echo -e "${YELLOW}Warning: steam-jupiter not found at /usr/bin/steam-jupiter${NC}"
-        fi
-    fi
-
-    if [ -f "$HOME/.steam/steam/steam.sh" ] || [ -f "$HOME/.local/share/Steam/steam.sh" ]; then
+    # Patch steam.sh if it exists (all systems except Bazzite)
+    if ! is_bazzite && ([ -f "$HOME/.steam/steam/steam.sh" ] || [ -f "$HOME/.local/share/Steam/steam.sh" ]); then
+        echo ""
+        echo -e "${GREEN}Patching steam.sh...${NC}"
         patch_steam_sh
     fi
-
-    echo ""
-    echo -e "${GREEN}Creating Steam wrapper...${NC}"
-    create_steam_wrapper
-
-    echo ""
-    echo -e "${GREEN}Patching desktop/autorun files...${NC}"
-    patch_steam_desktop
 
     echo ""
     echo "SLSsteam installed and configured successfully!"
