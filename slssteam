@@ -110,7 +110,7 @@ close_steam_graceful() {
     }
 
     echo "  Closing Steam gracefully via steam://exit..."
-    timeout 10 $steam_exe -clearbeta steam://exit 2>/dev/null || true
+    timeout 30 $steam_exe -clearbeta steam://exit 2>/dev/null || true
 }
 
 close_steam() {
@@ -310,8 +310,20 @@ EOF
 # =============================================================================
 
 configure_slssteam_injection() {
-    local sls_dir
+    local sls_dir sls_config config_file
     sls_dir=$(get_sls_install_dir)
+    sls_config=$(get_sls_config_dir)
+    config_file="$sls_config/config.yaml"
+
+    # Enable PlayNotOwnedGames for all systems
+    if [ -f "$config_file" ]; then
+        if grep -q -F "PlayNotOwnedGames: no" "$config_file" 2>/dev/null; then
+            sed -i 's/PlayNotOwnedGames: no/PlayNotOwnedGames: yes/' "$config_file"
+        elif ! grep -q -F "PlayNotOwnedGames: yes" "$config_file" 2>/dev/null; then
+            echo "PlayNotOwnedGames: yes" >> "$config_file"
+        fi
+        echo "  PlayNotOwnedGames enabled"
+    fi
 
     # Steam Deck: patch steam-jupiter, enable SafeMode
     if is_steam_deck; then
@@ -326,7 +338,6 @@ configure_slssteam_injection() {
         fi
 
         # Enable SafeMode on Steam Deck
-        local config_file="$sls_dir/config.yaml"
         if [ -f "$config_file" ]; then
             if grep -q "^SafeMode:" "$config_file" 2>/dev/null; then
                 sed -i 's/^SafeMode:.*/SafeMode: yes/' "$config_file"
