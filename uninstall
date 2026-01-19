@@ -87,68 +87,57 @@ is_bazzite() {
     return 1
 }
 
-# --- Uninstall SLSsteam Injection ---
-uninstall_slssteam_injection() {
-    echo "Cleaning up SLSsteam injection..."
+# --- Cleanup LD_AUDIT patches and wrappers ---
+cleanup_ld_audit() {
+    echo "Cleaning up existing LD_AUDIT patches..."
 
-    local steam_script
-    local steam_backup
-    local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
-    local autostart_file="$HOME/.config/autostart/steam.desktop"
+    # Clean steam.sh (all possible locations)
+    for steam_sh in \
+        "$HOME/.steam/steam/steam.sh" \
+        "$HOME/.local/share/Steam/steam.sh" \
+        "/var/home/$USER/.steam/steam/steam.sh" \
+        "/var/home/$USER/.local/share/Steam/steam.sh" \
+        "/usr/share/steam/steam.sh"; do
+        if [ -f "$steam_sh" ]; then
+            if grep -q "LD_AUDIT.*SLSsteam" "$steam_sh" 2>/dev/null; then
+                sed -i '/export LD_AUDIT.*SLSsteam/d' "$steam_sh"
+                echo "  Cleaned: $steam_sh"
+            fi
+        fi
+    done
 
-    # Detect Bazzite
-    local is_bazzite
-    is_bazzite=$(is_bazzite && echo "1" || echo "0")
-
-    # Steam Deck: Restore steam-jupiter from backup
+    # Clean steam-jupiter (Steam Deck)
     local steam_jupiter="/usr/bin/steam-jupiter"
     if [ -f "$steam_jupiter" ]; then
-        echo "  Steam Deck detected - cleaning steam-jupiter..."
-        local jupiter_backup="${steam_jupiter}.bak"
-        if [[ -f "$jupiter_backup" ]]; then
-            if sudo cp "$jupiter_backup" "$steam_jupiter"; then
-                echo "    Restored original: $steam_jupiter"
-                sudo rm -f "$jupiter_backup"
-            else
-                echo -e "    ${YELLOW}Warning: Failed to restore $steam_jupiter${NC}"
-            fi
-        else
-            # Try to remove LD_AUDIT lines if present
-            if grep -q "LD_AUDIT" "$steam_jupiter" 2>/dev/null; then
-                if sudo sed -i '/^export LD_AUDIT/d' "$steam_jupiter"; then
-                    echo "    Removed LD_AUDIT lines from $steam_jupiter"
-                else
-                    echo -e "    ${YELLOW}Warning: Failed to modify $steam_jupiter${NC}"
-                fi
-            fi
+        if grep -q "LD_AUDIT.*SLSsteam" "$steam_jupiter" 2>/dev/null; then
+            sudo sed -i '/export LD_AUDIT.*SLSsteam/d' "$steam_jupiter"
+            echo "  Cleaned: $steam_jupiter"
         fi
     fi
 
-    # Try to find Steam executable
-    if steam_script=$(find_steam_executable 2>/dev/null); then
-        steam_backup="${steam_script}.bak"
-
-        # Restore original steam script from backup
-        if [[ -f "$steam_backup" ]]; then
-            if sudo cp "$steam_backup" "$steam_script"; then
-                echo "  Restored original: $steam_script"
-                sudo rm -f "$steam_backup"
-            else
-                echo -e "  ${YELLOW}Warning: Failed to restore $steam_script${NC}"
-            fi
-        else
-            # Try to remove LD_AUDIT lines if present
-            if grep -q "LD_AUDIT" "$steam_script" 2>/dev/null; then
-                if sudo sed -i '/^export LD_AUDIT/d' "$steam_script"; then
-                    echo "  Removed LD_AUDIT lines from $steam_script"
-                else
-                    echo -e "  ${YELLOW}Warning: Failed to modify $steam_script${NC}"
-                fi
-            fi
+    # Remove wrappers
+    for wrapper in "/usr/local/bin/steam" "/usr/local/bin/bazzite-steam"; do
+        if [ -f "$wrapper" ]; then
+            sudo rm -f "$wrapper"
+            echo "  Removed: $wrapper"
         fi
-    else
-        echo -e "${YELLOW}  Warning: Steam executable not found, skipping script cleanup${NC}"
+    done
+
+    # Remove backups
+    if [ -f "/usr/bin/steam-jupiter.bak" ]; then
+        sudo rm -f "/usr/bin/steam-jupiter.bak"
+        echo "  Removed backup: /usr/bin/steam-jupiter.bak"
     fi
+
+    echo "Cleanup complete!"
+}
+
+# --- Cleanup SLSsteam configuration and desktop files ---
+cleanup_slssteam() {
+    echo "Cleaning up SLSsteam configuration..."
+
+    local desktop_shortcut="$HOME/.local/share/applications/steam.desktop"
+    local autostart_file="$HOME/.config/autostart/steam.desktop"
 
     # Remove desktop shortcut override (system shortcut will be used again)
     if [[ -f "$desktop_shortcut" ]]; then
@@ -156,56 +145,58 @@ uninstall_slssteam_injection() {
         echo "  Removed desktop shortcut override."
     fi
 
-    # Restore autostart to use system steam
+    # Restore autostart to use correct Steam executable
     if [[ -f "$autostart_file" ]]; then
-        # Replace any Exec line pointing to steam with system path
-        sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=/usr/bin/steam|g' "$autostart_file"
-        echo "  Restored autostart entry."
+        if is_bazzite; then
+            # On Bazzite, use bazzite-steam wrapper
+            sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=bazzite-steam|g' "$autostart_file"
+            echo "  Restored autostart to use bazzite-steam."
+        else
+            # On other systems, use system steam
+            sed -i 's|Exec=[^ ]*steam[^ ]*|Exec=/usr/bin/steam|g' "$autostart_file"
+            echo "  Restored autostart to use /usr/bin/steam."
+        fi
     fi
+}
 
-    # Also clean up any SLSsteam wrapper if it exists
-    if [ $is_bazzite -eq 1 ]; then
-        # On Bazzite: remove bazzite-steam and old steam wrapper
-        if [[ -f "/usr/local/bin/bazzite-steam" ]]; then
-            if sudo rm -f "/usr/local/bin/bazzite-steam"; then
-                echo "  Removed bazzite-steam wrapper"
-            else
-                echo -e "  ${YELLOW}Warning: Failed to remove /usr/local/bin/bazzite-steam${NC}"
-            fi
+# Find steam.sh location for debugging
+find_steam_sh() {
+    for steam_sh in \
+        "$HOME/.steam/steam/steam.sh" \
+        "$HOME/.local/share/Steam/steam.sh" \
+        "/var/home/$USER/.steam/steam/steam.sh" \
+        "/var/home/$USER/.local/share/Steam/steam.sh" \
+        "/usr/share/steam/steam.sh"; do
+        if [ -f "$steam_sh" ]; then
+            echo "$steam_sh"
+            return 0
         fi
-        if [[ -f "/usr/local/bin/steam" ]]; then
-            if sudo rm -f "/usr/local/bin/steam"; then
-                echo "  Removed old steam wrapper"
-            else
-                echo -e "  ${YELLOW}Warning: Failed to remove /usr/local/bin/steam${NC}"
-            fi
-        fi
-    else
-        # On other distros: only remove steam wrapper
-        if [[ -f "/usr/local/bin/steam" ]]; then
-            if sudo rm -f "/usr/local/bin/steam"; then
-                echo "  Removed SLSsteam wrapper from /usr/local/bin/steam"
-            else
-                echo -e "  ${YELLOW}Warning: Failed to remove /usr/local/bin/steam${NC}"
-            fi
-        fi
-    fi
-
-    # Clean up steam.sh (remove LD_AUDIT line added by SLSsteam)
-    local steam_sh_dir
-    if steam_sh_dir=$(find_steam_directory 2>/dev/null) && [[ -f "$steam_sh_dir/steam.sh" ]]; then
-        if grep -q "LD_AUDIT.*SLSsteam" "$steam_sh_dir/steam.sh" 2>/dev/null; then
-            sed -i '/^export LD_AUDIT.*SLSsteam/d' "$steam_sh_dir/steam.sh"
-            echo "  Cleaned LD_AUDIT from $steam_sh_dir/steam.sh"
-        fi
-    fi
+    done
+    return 1
 }
 
 echo -e "${GREEN}Starting uninstallation...${NC}"
 echo ""
 
-# Uninstall SLSsteam injection first (needs sudo)
-uninstall_slssteam_injection
+# Debug: show steam.sh location
+steam_sh_location=$(find_steam_sh 2>/dev/null || true)
+if [ -n "$steam_sh_location" ]; then
+    echo "Found steam.sh at: $steam_sh_location"
+    if grep -q "LD_AUDIT" "$steam_sh_location" 2>/dev/null; then
+        echo "  steam.sh contains LD_AUDIT entries:"
+        grep "LD_AUDIT" "$steam_sh_location" | sed 's/^/    /'
+    fi
+else
+    echo "Warning: steam.sh not found in any standard location"
+fi
+echo ""
+
+# Cleanup LD_AUDIT patches and wrappers first
+cleanup_ld_audit
+echo ""
+
+# Cleanup SLSsteam configuration and desktop files
+cleanup_slssteam
 echo ""
 
 # Remove steam.cfg (created by SLSsteam to block updates)
@@ -249,6 +240,19 @@ done
 
 if [ $FOUND_SLS -eq 0 ]; then
 	echo "No SLSsteam directories found. Skipping..."
+fi
+
+echo ""
+
+# Final verification: check if steam.sh still has LD_AUDIT
+steam_sh_location=$(find_steam_sh 2>/dev/null || true)
+if [ -n "$steam_sh_location" ] && grep -q "LD_AUDIT.*SLSsteam" "$steam_sh_location" 2>/dev/null; then
+    echo -e "${YELLOW}Warning: steam.sh still contains LD_AUDIT entries!${NC}"
+    echo "  File: $steam_sh_location"
+    echo "  Please manually edit this file and remove the LD_AUDIT line."
+    echo "  Or run: sed -i '/export LD_AUDIT.*SLSsteam/d' $steam_sh_location"
+else
+    echo "Verification: steam.sh is clean (no LD_AUDIT entries found)"
 fi
 
 echo ""
