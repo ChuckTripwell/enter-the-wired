@@ -98,7 +98,7 @@ function Install-EnterTheWiredWin {
 
     # Get scripts directory
     if ($runningViaPipe) {
-        $scriptDir = Join-Path ([System.IO.Path]::GetTempPath()) "enter-the-wired-win-$(Get-Random)"
+        $scriptDir = Join-Path ([System.IO.Path]::GetTempPath()) "enter-the-wired-windows-$(Get-Random)"
         New-Item -ItemType Directory -Force -Path $scriptDir | Out-Null
     }
     else {
@@ -108,8 +108,8 @@ function Install-EnterTheWiredWin {
     try {
         # Fetch scripts if running via pipe
         if ($runningViaPipe) {
-            $accelaUrl = "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/enter-the-wired-win/accela.ps1"
-            $greenlumaUrl = "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/enter-the-wired-win/greenluma.ps1"
+            $accelaUrl = "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/windows/accela.ps1"
+            $greenlumaUrl = "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main/windows/greenluma.ps1"
 
             Write-Status "Fetching accela.ps1..." -Type Info
             Invoke-WebRequest -Uri $accelaUrl -OutFile (Join-Path $scriptDir "accela.ps1") -ErrorAction Stop
