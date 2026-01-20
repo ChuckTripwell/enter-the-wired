@@ -232,4 +232,4 @@ function Install-GreenLumaWindows {
 }
 
 # Run installation
-Install-GreenLumaWindows @PSBoundParameters
+Install-GreenLumaWindows
