@@ -321,7 +321,7 @@ prepare_steam() {
     if close_steam_graceful; then
         echo "  Steam closing for update..."
     elif is_steam_deck; then
-        echo "  Steam Deck detected - will patch steam-jupiter for Gaming Mode"
+        echo "  Steam Deck detected"
     else
         echo "  Steam not found, will open Steam after installation"
     fi
